@@ -1,18 +1,41 @@
 from flask import Flask, jsonify
+from flask_cors import CORS
 from flask_migrate import Migrate
+from flask_jwt_extended import JWTManager
 from config import Config
-from models import db
+from models import db, TokenBlocklist
 from routes import api
+from auth import auth
 
 
 def create_app(config=Config):
     app = Flask(__name__)
     app.config.from_object(config)
+    CORS(app)
 
     db.init_app(app)
     Migrate(app, db)
+    jwt = JWTManager(app)
 
     app.register_blueprint(api)
+    app.register_blueprint(auth)
+
+    # ── Blocklist check — runs on every protected request ─────────────────
+    @jwt.token_in_blocklist_loader
+    def check_if_token_revoked(jwt_header, jwt_payload):
+        return TokenBlocklist.query.filter_by(jti=jwt_payload["jti"]).first() is not None
+
+    @jwt.revoked_token_loader
+    def revoked_token_response(jwt_header, jwt_payload):
+        return jsonify({"error": "Token has been revoked. Please log in again."}), 401
+
+    @jwt.expired_token_loader
+    def expired_token_response(jwt_header, jwt_payload):
+        return jsonify({"error": "Token has expired. Please refresh or log in again."}), 401
+
+    @jwt.unauthorized_loader
+    def missing_token_response(reason):
+        return jsonify({"error": "Authentication required.", "detail": reason}), 401
 
     # ── Global error handlers ─────────────────────────────────────────────
     @app.errorhandler(404)
