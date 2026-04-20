@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: pos2-backend
+    env: python
+    buildCommand: python -m pip install -r requirements.txt
+    startCommand: python -m gunicorn app:create_app
+    autoDeploy: true
+    plan: free
+
+  - type: static
+    name: pos2-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    autoDeploy: true
+    plan: free

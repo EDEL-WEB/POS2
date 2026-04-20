@@ -1,0 +1,7 @@
+import sys
+path = '/home/marked/pos2'
+if path not in sys.path:
+    sys.path.insert(0, path)
+
+from app import create_app
+application = create_app()
