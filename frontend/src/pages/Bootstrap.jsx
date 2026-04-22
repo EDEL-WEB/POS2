@@ -1,59 +1,45 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 
 export default function Bootstrap() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const { bootstrap, loading } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const handle = async (e) => {
+    e.preventDefault();
     setError("");
-    setMessage("");
-
     try {
-      const result = await bootstrap({ name, email, password });
-      setMessage(result.message || "Owner account created successfully.");
-      setName("");
-      setEmail("");
-      setPassword("");
+      await bootstrap(form);
+      navigate("/login");
     } catch (err) {
-      setError(err.message || "Unable to bootstrap owner account");
+      setError(err.message);
     }
   };
 
   return (
-    <div className="card">
-      <h1 className="heading">Bootstrap Owner</h1>
-      <p className="small">Create the first owner account. This endpoint is disabled once an owner exists.</p>
-      {message && <div className="alert success">{message}</div>}
-      {error && <div className="alert error">{error}</div>}
-      <form onSubmit={handleSubmit} className="grid grid-cols-2">
-        <div className="field">
-          <label htmlFor="name">Owner Name</label>
-          <input id="name" value={name} onChange={(event) => setName(event.target.value)} required />
-        </div>
-        <div className="field">
-          <label htmlFor="email">Owner Email</label>
-          <input id="email" value={email} type="email" onChange={(event) => setEmail(event.target.value)} required />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Password</label>
-          <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-        </div>
-        <div className="actions" style={{ marginTop: "1rem" }}>
-          <button type="submit" className="primary" disabled={loading}>
-            {loading ? "Creating..." : "Create Owner"}
-          </button>
-          <Link to="/login" className="secondary">
-            Back to Login
-          </Link>
-        </div>
-      </form>
+    <div className="auth-page">
+      <div className="auth-card">
+        <img src="/logo.jpeg" alt="Spark Perfumes" className="auth-logo" />
+        <h1 className="auth-title">Spark Perfumes</h1>
+        <h2>Create Owner Account</h2>
+        <p style={{ color: "var(--muted)", marginBottom: "1rem", fontSize: "0.9rem" }}>
+          First-time setup only. Returns 403 if an owner already exists.
+        </p>
+        {error && <div className="alert alert-error">{error}</div>}
+        <form onSubmit={handle} className="form">
+          <label>Name</label>
+          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+          <label>Email</label>
+          <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+          <label>Password</label>
+          <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+          <button className="btn btn-primary" disabled={loading}>{loading ? "Creating…" : "Create Owner"}</button>
+        </form>
+        <p className="auth-footer"><Link to="/login">Back to login</Link></p>
+      </div>
     </div>
   );
 }

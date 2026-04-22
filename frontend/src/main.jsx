@@ -1,19 +1,19 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import App from "./App";
 import { AuthProvider } from "./AuthProvider";
-import { ThemeProvider } from "./ThemeProvider";
+import { ToastProvider } from "./ToastProvider";
+import App from "./App";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider>
-        <AuthProvider>
+      <AuthProvider>
+        <ToastProvider>
           <App />
-        </AuthProvider>
-      </ThemeProvider>
+        </ToastProvider>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

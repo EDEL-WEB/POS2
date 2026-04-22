@@ -1,43 +1,16 @@
-# Perfume Shop POS — React Frontend
+# React + Vite
 
-A lightweight React frontend for the Flask POS backend.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Setup
+Currently, two official plugins are available:
 
-1. Open a terminal in `POS2/frontend`
-2. Install dependencies:
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-```bash
-npm install
-```
+## React Compiler
 
-3. Copy the example file:
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-```bash
-cp .env.example .env
-```
+## Expanding the ESLint configuration
 
-4. Update `VITE_API_BASE_URL` if your backend is not running at `http://127.0.0.1:5000`.
-
-5. Start the app:
-
-```bash
-npm run dev
-```
-
-The frontend will run at `http://localhost:3000`.
-
-## Features
-
-- Login, register, and bootstrap owner account
-- Product list, creation, editing, and deletion for owners
-- Sale creation with cash or M-Pesa payment flows
-- Daily report viewer
-- Owner-only cashier activation / deactivation
-- Profile view and logout
-
-## Backend Notes
-
-The backend must allow cross-origin requests from the frontend, or you can proxy API calls through the same domain.
-
-If needed, add a small CORS configuration to the Flask app using `flask-cors`.
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.

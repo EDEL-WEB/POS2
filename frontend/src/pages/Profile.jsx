@@ -1,31 +1,45 @@
+import { useState } from "react";
 import { useAuth } from "../AuthProvider";
+import { api } from "../api";
 
 export default function Profile() {
   const { user } = useAuth();
+  const [form, setForm] = useState({ current_password: "", new_password: "" });
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  if (!user) {
-    return null;
-  }
+  const handle = async (e) => {
+    e.preventDefault();
+    setError(""); setSuccess(""); setLoading(true);
+    try {
+      await api("/auth/change-password", { method: "POST", body: JSON.stringify(form) });
+      setSuccess("Password updated successfully.");
+      setForm({ current_password: "", new_password: "" });
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
 
   return (
-    <div className="card">
-      <h1 className="heading">Profile</h1>
-      <div className="field">
-        <label>Name</label>
-        <input type="text" value={user.name} readOnly />
+    <div style={{ maxWidth: "480px" }}>
+      <h1>My Profile</h1>
+      <div className="card" style={{ marginBottom: "1.5rem" }}>
+        <p><strong>Name:</strong> {user?.name}</p>
+        <p><strong>Email:</strong> {user?.email}</p>
+        <p><strong>Role:</strong> <span className={`badge badge-${user?.role}`}>{user?.role}</span></p>
+        <p><strong>Status:</strong> <span className={`badge badge-${user?.status}`}>{user?.status}</span></p>
       </div>
-      <div className="field">
-        <label>Email</label>
-        <input type="text" value={user.email} readOnly />
-      </div>
-      <div className="field">
-        <label>Role</label>
-        <input type="text" value={user.role} readOnly />
-      </div>
-      <div className="field">
-        <label>Status</label>
-        <input type="text" value={user.status} readOnly />
-      </div>
+
+      <h2>Change Password</h2>
+      {error && <div className="alert alert-error">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
+      <form onSubmit={handle} className="form">
+        <label>Current Password</label>
+        <input type="password" value={form.current_password} onChange={e => setForm(f => ({ ...f, current_password: e.target.value }))} required />
+        <label>New Password</label>
+        <input type="password" value={form.new_password} onChange={e => setForm(f => ({ ...f, new_password: e.target.value }))} required />
+        <button className="btn btn-primary" disabled={loading}>{loading ? "Saving…" : "Update Password"}</button>
+      </form>
     </div>
   );
 }

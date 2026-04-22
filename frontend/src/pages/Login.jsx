@@ -1,61 +1,42 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const { login, loading } = useAuth();
   const navigate = useNavigate();
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const handle = async (e) => {
+    e.preventDefault();
     setError("");
     try {
-      await login({ email, password });
-      navigate("/products");
+      await login(form);
+      navigate("/dashboard");
     } catch (err) {
-      setError(err.message || "Unable to login");
+      setError(err.message);
     }
   };
 
   return (
-    <div className="form-container">
-      <h1>Login</h1>
-      {error && <div className="alert error">{error}</div>}
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label className="form-label" htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            autoComplete="email"
-            onChange={(event) => setEmail(event.target.value)}
-            className="form-input"
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label className="form-label" htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            autoComplete="current-password"
-            onChange={(event) => setPassword(event.target.value)}
-            className="form-input"
-            required
-          />
-        </div>
-        <button type="submit" className="form-btn" disabled={loading}>
-          {loading ? "Logging in..." : "Login"}
-        </button>
-      </form>
-      <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-        Don't have an account? <Link to="/register">Register</Link>
-      </p>
+    <div className="auth-page">
+      <div className="auth-card">
+        <img src="/logo.jpeg" alt="Spark Perfumes" className="auth-logo" />
+        <h1 className="auth-title">Spark Perfumes</h1>
+        <h2>Sign In</h2>
+        {error && <div className="alert alert-error">{error}</div>}
+        <form onSubmit={handle} className="form">
+          <label>Email</label>
+          <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+          <label>Password</label>
+          <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+          <button className="btn btn-primary" disabled={loading}>{loading ? "Signing in…" : "Sign In"}</button>
+        </form>
+        <p className="auth-footer">
+          No account? <Link to="/register">Register</Link> · <Link to="/bootstrap">Setup owner</Link>
+        </p>
+      </div>
     </div>
   );
 }

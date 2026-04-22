@@ -1,25 +1,19 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import { getStoredUser, saveAuthData, clearAuthData, loginUser, registerUser, bootstrapOwner, logoutUser } from "./api";
+import { createContext, useContext, useState, useEffect } from "react";
+import { getStoredUser, saveAuthData, clearAuthData, loginUser, registerUser, bootstrapOwner, api } from "./api";
 
-const AuthContext = createContext(null);
+const Ctx = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(getStoredUser());
+  const [user, setUser] = useState(getStoredUser);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    setUser(getStoredUser());
-  }, []);
-
-  const login = async (credentials) => {
+  const login = async (creds) => {
     setLoading(true);
     try {
-      const data = await loginUser(credentials);
+      const data = await loginUser(creds);
       saveAuthData(data);
       setUser(data.user);
       return data;
-    } catch (err) {
-      throw err;
     } finally {
       setLoading(false);
     }
@@ -27,44 +21,31 @@ export function AuthProvider({ children }) {
 
   const register = async (payload) => {
     setLoading(true);
-    try {
-      return await registerUser(payload);
-    } finally {
-      setLoading(false);
-    }
+    try { return await registerUser(payload); }
+    finally { setLoading(false); }
   };
 
   const bootstrap = async (payload) => {
     setLoading(true);
-    try {
-      return await bootstrapOwner(payload);
-    } finally {
-      setLoading(false);
-    }
+    try { return await bootstrapOwner(payload); }
+    finally { setLoading(false); }
   };
 
   const logout = async () => {
-    setLoading(true);
-    try {
-      await logoutUser();
-    } finally {
-      clearAuthData();
-      setUser(null);
-      setLoading(false);
-    }
+    try { await api("/auth/logout", { method: "POST" }); } catch {}
+    clearAuthData();
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, bootstrap, logout, loading }}>
+    <Ctx.Provider value={{ user, login, register, bootstrap, logout, loading }}>
       {children}
-    </AuthContext.Provider>
+    </Ctx.Provider>
   );
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
-  return context;
-}
+export const useAuth = () => {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useAuth must be inside AuthProvider");
+  return ctx;
+};

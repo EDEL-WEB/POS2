@@ -1,253 +1,402 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { authRequest } from "../api";
+import { useEffect, useState, useMemo } from "react";
+import { get_ } from "../api";
+import {
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
+} from "recharts";
 
-export default function Reports({ defaultReportType = "daily" }) {
-  const navigate = useNavigate();
-  const [reportType, setReportType] = useState(defaultReportType);
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [days, setDays] = useState(30);
-  const [limit, setLimit] = useState(10);
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [settings, setSettings] = useState(null);
+const fmt = (n) => (n ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2 });
+const COLORS = ["#C8A45C", "#1565c0", "#2e7d32", "#c62828", "#7b1fa2", "#e65100"];
 
-  const topProducts = useMemo(() => {
-    if (!report?.length) return [];
-    return report;
-  }, [report]);
+// ── Tab: Overview ────────────────────────────────────────────────────────────
+function OverviewTab({ date, setDate, preset, setPreset }) {
+  const [daily, setDaily]     = useState(null);
+  const [weekly, setWeekly]   = useState(null);
+  const [monthly, setMonthly] = useState(null);
+  const [cashflow, setCashflow] = useState([]);
+  const [sales, setSales]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
 
-  const paymentBreakdown = useMemo(() => {
-    if (!report || reportType === "top-products" || reportType === "cashflow") return null;
-    const cash = report.breakdown?.cash?.total ?? 0;
-    const mpesa = report.breakdown?.mpesa?.total ?? 0;
-    const total = cash + mpesa;
-    return {
-      cash,
-      mpesa,
-      cashShare: total ? Math.round((cash / total) * 100) : 0,
-      mpesaShare: total ? Math.round((mpesa / total) * 100) : 0,
-    };
-  }, [report, reportType]);
-
-  const cashflowData = useMemo(() => {
-    if (reportType !== "cashflow" || !report?.daily_totals) return [];
-    return Object.entries(report.daily_totals).map(([date, totals]) => ({
-      date,
-      cash: totals.cash,
-      mpesa: totals.mpesa,
-      total: totals.cash + totals.mpesa,
-    })).sort((a, b) => a.date.localeCompare(b.date));
-  }, [report, reportType]);
+  const today = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    setReportType(defaultReportType);
-  }, [defaultReportType]);
+    setLoading(true); setError("");
+    Promise.all([
+      get_(`/reports/daily?date=${date}`),
+      get_(`/reports/weekly?date=${date}`),
+      get_(`/reports/monthly?date=${date}`),
+      get_("/reports/cashflow?days=30"),
+      get_(`/sales?status=completed&date=${date}`),
+    ])
+      .then(([d, w, m, cf, s]) => {
+        setDaily(d); setWeekly(w); setMonthly(m);
+        setCashflow(
+          Object.entries(cf.daily_totals).map(([dt, v]) => ({
+            date: dt.slice(5),
+            cash: v.cash, mpesa: v.mpesa, total: v.cash + v.mpesa,
+          }))
+        );
+        setSales(s);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [date]);
 
-  useEffect(() => {
-    fetchReport();
-    fetchSettings();
-  }, [reportType]);
+  // Cashier leaderboard from sales
+  const cashierStats = useMemo(() => {
+    const map = {};
+    sales.forEach(s => {
+      const n = s.cashier_name || "Unknown";
+      if (!map[n]) map[n] = { name: n, sales: 0, revenue: 0 };
+      map[n].sales++;
+      map[n].revenue += parseFloat(s.total_amount);
+    });
+    return Object.values(map).sort((a, b) => b.revenue - a.revenue);
+  }, [sales]);
 
-  const fetchSettings = async () => {
-    try {
-      const data = await authRequest("/settings", { method: "GET" });
-      setSettings(data);
-    } catch (err) {
-      setSettings({ currency: "KES" });
-    }
-  };
+  // Insights
+  const insights = useMemo(() => {
+    if (!daily || !weekly) return [];
+    const out = [];
+    const avg = weekly.total_revenue / 7;
+    const diff = daily.total_revenue - avg;
+    if (diff > 0) out.push(`📈 Revenue is KES ${fmt(diff)} above the 7-day daily average`);
+    else if (diff < 0) out.push(`📉 Revenue is KES ${fmt(Math.abs(diff))} below the 7-day daily average`);
+    const aov = daily.total_sales > 0 ? daily.total_revenue / daily.total_sales : 0;
+    if (aov > 0) out.push(`🧾 Average order value today: KES ${fmt(aov)}`);
+    const cashPct = daily.total_revenue > 0 ? (daily.breakdown?.cash?.total / daily.total_revenue * 100).toFixed(0) : 0;
+    const mpesaPct = daily.total_revenue > 0 ? (daily.breakdown?.mpesa?.total / daily.total_revenue * 100).toFixed(0) : 0;
+    if (cashPct > mpesaPct) out.push(`💵 Cash dominates today at ${cashPct}% of revenue`);
+    else if (mpesaPct > 0) out.push(`📱 M-Pesa dominates today at ${mpesaPct}% of revenue`);
+    if (cashierStats[0]) out.push(`🏆 Top cashier: ${cashierStats[0].name} — KES ${fmt(cashierStats[0].revenue)}`);
+    return out;
+  }, [daily, weekly, cashierStats]);
 
-  const fetchReport = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      let url = `/reports/${reportType}`;
-      if (reportType === "daily" || reportType === "weekly" || reportType === "monthly") {
-        url += `?date=${date}`;
-      } else if (reportType === "cashflow") {
-        url += `?days=${days}`;
-      } else if (reportType === "top-products") {
-        url += `?limit=${limit}`;
-      }
-      const data = await authRequest(url, { method: "GET" });
-      setReport(data);
-    } catch (err) {
-      setError(err.message || "Unable to load report");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const pieData = daily ? [
+    { name: "Cash",   value: daily.breakdown?.cash?.total  ?? 0 },
+    { name: "M-Pesa", value: daily.breakdown?.mpesa?.total ?? 0 },
+  ].filter(d => d.value > 0) : [];
 
-  const handleReportTypeChange = (type) => {
-    setReportType(type);
-    setReport(null);
-    if (type === "daily") navigate("/reports/daily");
-    else if (type === "weekly") navigate("/reports/weekly");
-    else if (type === "monthly") navigate("/reports/monthly");
-    else if (type === "cashflow") navigate("/reports/cashflow");
-    else if (type === "top-products") navigate("/reports/top-products");
-  };
+  const aov = daily?.total_sales > 0 ? daily.total_revenue / daily.total_sales : 0;
 
-  const handleDateChange = (event) => {
-    setDate(event.target.value);
-  };
-
-
-  const handleDaysChange = (event) => {
-    setDays(parseInt(event.target.value));
-  };
-
-  const handleLimitChange = (event) => {
-    setLimit(parseInt(event.target.value));
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    fetchReport();
-  };
+  if (loading) return <div className="loading">Loading…</div>;
+  if (error)   return <div className="alert alert-error">{error}</div>;
 
   return (
-    <div className="card">
-      <h1 className="heading">Reports</h1>
+    <div>
+      {/* Date presets */}
+      <div className="report-presets">
+        {[
+          { label: "Today",     val: "today" },
+          { label: "Yesterday", val: "yesterday" },
+          { label: "This Week", val: "week" },
+          { label: "This Month",val: "month" },
+        ].map(p => (
+          <button
+            key={p.val}
+            className={`btn btn-sm ${preset === p.val ? "btn-primary" : "btn-outline"}`}
+            onClick={() => {
+              setPreset(p.val);
+              const d = new Date();
+              if (p.val === "today")     setDate(d.toISOString().slice(0, 10));
+              if (p.val === "yesterday") { d.setDate(d.getDate() - 1); setDate(d.toISOString().slice(0, 10)); }
+              if (p.val === "week")      { d.setDate(d.getDate() - d.getDay() + 1); setDate(d.toISOString().slice(0, 10)); }
+              if (p.val === "month")     setDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10));
+            }}
+          >{p.label}</button>
+        ))}
+        <input type="date" value={date} className="date-input" onChange={e => { setDate(e.target.value); setPreset("custom"); }} />
+      </div>
 
-      <div className="field" style={{ marginBottom: "1rem" }}>
-        <label>Report Type</label>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          {["daily", "weekly", "monthly", "top-products", "cashflow"].map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={reportType === type ? "primary" : ""}
-              onClick={() => handleReportTypeChange(type)}
-              style={{ textTransform: "capitalize" }}
-            >
-              {type.replace("-", " ")}
-            </button>
-          ))}
+      {/* Insights */}
+      {insights.length > 0 && (
+        <div className="insights-bar" style={{ marginBottom: "1.25rem" }}>
+          {insights.map((ins, i) => <div key={i} className="insight-chip">{ins}</div>)}
+        </div>
+      )}
+
+      {/* KPI cards */}
+      <div className="stat-grid" style={{ marginBottom: "1.5rem" }}>
+        <div className="stat-card stat-card-highlight">
+          <div className="stat-label">Daily Revenue</div>
+          <div className="stat-value">KES {fmt(daily?.total_revenue)}</div>
+          <div className="stat-sub">Month: KES {fmt(monthly?.total_revenue)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Transactions</div>
+          <div className="stat-value">{daily?.total_sales ?? 0}</div>
+          <div className="stat-sub">Week: {weekly?.total_sales ?? 0} · Month: {monthly?.total_sales ?? 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Items Sold</div>
+          <div className="stat-value">{daily?.items_sold ?? 0}</div>
+          <div className="stat-sub">Week: {weekly?.items_sold ?? 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Avg Order Value</div>
+          <div className="stat-value">KES {fmt(aov)}</div>
+          <div className="stat-sub">Revenue ÷ transactions</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Cash</div>
+          <div className="stat-value">KES {fmt(daily?.breakdown?.cash?.total)}</div>
+          <div className="stat-sub">{daily?.breakdown?.cash?.count ?? 0} transactions</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">M-Pesa</div>
+          <div className="stat-value">KES {fmt(daily?.breakdown?.mpesa?.total)}</div>
+          <div className="stat-sub">{daily?.breakdown?.mpesa?.count ?? 0} transactions</div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ marginBottom: "1rem" }}>
-        {(reportType === "daily" || reportType === "weekly" || reportType === "monthly") && (
-          <div className="field" style={{ maxWidth: "18rem" }}>
-            <label htmlFor="report_date">Date</label>
-            <input id="report_date" type="date" value={date} onChange={handleDateChange} />
-          </div>
-        )}
-        {reportType === "cashflow" && (
-          <div className="field" style={{ maxWidth: "18rem" }}>
-            <label htmlFor="days">Days</label>
-            <input id="days" type="number" min="1" max="365" value={days} onChange={handleDaysChange} />
-          </div>
-        )}
-        {reportType === "top-products" && (
-          <div className="field" style={{ maxWidth: "18rem" }}>
-            <label htmlFor="limit">Limit</label>
-            <input id="limit" type="number" min="1" max="100" value={limit} onChange={handleLimitChange} />
-          </div>
-        )}
-        <button type="submit" className="primary">Load Report</button>
-      </form>
-
-      {error && <div className="alert error">{error}</div>}
-      {loading ? (
-        <p>Loading report…</p>
-      ) : report ? (
-        <>
-          {reportType === "top-products" ? (
-            <div className="card">
-              <h2>Top Products</h2>
-              {topProducts.length ? (
-                <div className="table-wrapper">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th>Units sold</th>
-                        <th>Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topProducts.map((product, index) => (
-                        <tr key={index}>
-                          <td>{product.name}</td>
-                          <td>{product.total_quantity}</td>
-                          <td>{settings?.currency || "KES"} {product.total_revenue.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="small">No data available.</p>
-              )}
-            </div>
-          ) : reportType === "cashflow" ? (
-            <div className="card">
-              <h2>Cashflow (Last {days} days)</h2>
-              {cashflowData.length ? (
-                <div className="table-wrapper">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Cash</th>
-                        <th>M-Pesa</th>
-                        <th>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cashflowData.map((day) => (
-                        <tr key={day.date}>
-                          <td>{day.date}</td>
-                          <td>{settings?.currency || "KES"} {day.cash.toFixed(2)}</td>
-                          <td>{settings?.currency || "KES"} {day.mpesa.toFixed(2)}</td>
-                          <td>{settings?.currency || "KES"} {day.total.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="small">No data available.</p>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="stat-grid" style={{ marginTop: "1rem" }}>
-                <div className="stat-card">
-                  <h3>Total revenue</h3>
-                  <p>{settings?.currency || "KES"} {report.total_revenue?.toFixed(2) ?? "0.00"}</p>
-                </div>
-                <div className="stat-card">
-                  <h3>Items sold</h3>
-                  <p>{report.items_sold ?? 0}</p>
-                </div>
-                <div className="stat-card">
-                  <h3>Cash share</h3>
-                  <p>{paymentBreakdown?.cashShare ?? 0}%</p>
-                  <small>{settings?.currency || "KES"} {paymentBreakdown?.cash?.toFixed(2) ?? "0.00"}</small>
-                </div>
-                <div className="stat-card">
-                  <h3>M-Pesa share</h3>
-                  <p>{paymentBreakdown?.mpesaShare ?? 0}%</p>
-                  <small>{settings?.currency || "KES"} {paymentBreakdown?.mpesa?.toFixed(2) ?? "0.00"}</small>
-                </div>
-              </div>
-
-              <div className="card" style={{ marginTop: "1rem" }}>
-                <h2>Period Summary</h2>
-                <p><strong>Period:</strong> {report.start_date || report.date} to {report.end_date || report.date}</p>
-                <p><strong>Total Sales:</strong> {report.total_sales}</p>
-              </div>
-            </>
+      {/* Charts row */}
+      <div className="report-charts">
+        {/* Revenue trend */}
+        <div className="chart-card" style={{ gridColumn: "span 2" }}>
+          <div className="chart-title">Revenue Trend — Last 30 Days</div>
+          {cashflow.length === 0 ? <p className="muted" style={{ padding: "2rem", textAlign: "center" }}>No data</p> : (
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={cashflow}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={4} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={v => `KES ${fmt(v)}`} />
+                <Legend />
+                <Line type="monotone" dataKey="cash"  stroke="#2e7d32" strokeWidth={2} dot={false} name="Cash" />
+                <Line type="monotone" dataKey="mpesa" stroke="#1565c0" strokeWidth={2} dot={false} name="M-Pesa" />
+                <Line type="monotone" dataKey="total" stroke="#C8A45C" strokeWidth={2} dot={false} name="Total" strokeDasharray="4 2" />
+              </LineChart>
+            </ResponsiveContainer>
           )}
-        </>
-      ) : (
-        <p className="small">Load a report to view data.</p>
+        </div>
+
+        {/* Payment split pie */}
+        <div className="chart-card">
+          <div className="chart-title">Payment Split (Selected Day)</div>
+          {pieData.length === 0 ? <p className="muted" style={{ padding: "2rem", textAlign: "center" }}>No sales</p> : (
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                  {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                </Pie>
+                <Tooltip formatter={v => `KES ${fmt(v)}`} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Cashier performance */}
+      {cashierStats.length > 0 && (
+        <div className="chart-card" style={{ marginTop: "1rem" }}>
+          <div className="chart-title">Cashier Performance (Selected Day)</div>
+          <table className="table" style={{ marginTop: "0.5rem" }}>
+            <thead><tr><th>Rank</th><th>Cashier</th><th>Sales</th><th>Revenue (KES)</th><th>Avg Order (KES)</th></tr></thead>
+            <tbody>
+              {cashierStats.map((c, i) => (
+                <tr key={c.name}>
+                  <td>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</td>
+                  <td><strong>{c.name}</strong></td>
+                  <td>{c.sales}</td>
+                  <td>{fmt(c.revenue)}</td>
+                  <td>{fmt(c.revenue / c.sales)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+    </div>
+  );
+}
+
+// ── Tab: Products ────────────────────────────────────────────────────────────
+function ProductsTab() {
+  const [data, setData]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+  const [limit, setLimit]     = useState(10);
+
+  useEffect(() => {
+    setLoading(true);
+    get_(`/reports/top-products?limit=${limit}`)
+      .then(setData)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [limit]);
+
+  const maxQty = data[0]?.total_quantity ?? 1;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div className="insights-bar" style={{ margin: 0 }}>
+          {data[0] && <div className="insight-chip">🏆 Best seller: {data[0].name} — {data[0].total_quantity} units</div>}
+          {data.length > 0 && <div className="insight-chip">💰 Top revenue: {data.sort((a,b)=>b.total_revenue-a.total_revenue)[0]?.name}</div>}
+        </div>
+        <select value={limit} onChange={e => setLimit(Number(e.target.value))} style={{ width: "auto", padding: "0.4rem 0.75rem" }}>
+          <option value={5}>Top 5</option>
+          <option value={10}>Top 10</option>
+          <option value={20}>Top 20</option>
+        </select>
+      </div>
+
+      {error && <div className="alert alert-error">{error}</div>}
+      {loading ? <div className="loading">Loading…</div> : (
+        <>
+          <div className="chart-card" style={{ marginBottom: "1rem" }}>
+            <div className="chart-title">Units Sold per Product</div>
+            <ResponsiveContainer width="100%" height={Math.max(200, data.length * 36)}>
+              <BarChart data={data} layout="vertical">
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={150} />
+                <Tooltip formatter={(v, n) => n === "total_revenue" ? `KES ${fmt(v)}` : v} />
+                <Legend />
+                <Bar dataKey="total_quantity" fill="#C8A45C" name="Units Sold" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="total_revenue"  fill="#1565c0" name="Revenue (KES)" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <table className="table">
+            <thead>
+              <tr><th>Rank</th><th>Product</th><th>Units Sold</th><th>Revenue (KES)</th><th>Share</th></tr>
+            </thead>
+            <tbody>
+              {data.map((r, i) => (
+                <tr key={r.name}>
+                  <td>{i + 1}</td>
+                  <td><strong>{r.name}</strong></td>
+                  <td>{r.total_quantity}</td>
+                  <td>{fmt(r.total_revenue)}</td>
+                  <td>
+                    <div className="share-bar">
+                      <div className="share-fill" style={{ width: `${(r.total_quantity / maxQty * 100).toFixed(0)}%` }} />
+                      <span>{(r.total_quantity / maxQty * 100).toFixed(0)}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Cashflow ────────────────────────────────────────────────────────────
+function CashflowTab() {
+  const [days, setDays]       = useState(30);
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    get_(`/reports/cashflow?days=${days}`)
+      .then(setData)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  const rows = data ? Object.entries(data.daily_totals).map(([d, v]) => ({
+    date: d, cash: v.cash, mpesa: v.mpesa, total: v.cash + v.mpesa,
+  })) : [];
+
+  const totalCash  = rows.reduce((s, r) => s + r.cash, 0);
+  const totalMpesa = rows.reduce((s, r) => s + r.mpesa, 0);
+  const totalRev   = totalCash + totalMpesa;
+  const peakDay    = rows.reduce((best, r) => r.total > (best?.total ?? 0) ? r : best, null);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", alignItems: "center" }}>
+        {[7, 14, 30, 60, 90].map(d => (
+          <button key={d} className={`btn btn-sm ${days === d ? "btn-primary" : "btn-outline"}`} onClick={() => setDays(d)}>
+            {d}d
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="alert alert-error">{error}</div>}
+
+      {!loading && rows.length > 0 && (
+        <>
+          <div className="insights-bar" style={{ marginBottom: "1rem" }}>
+            <div className="insight-chip">💰 Total revenue: KES {fmt(totalRev)}</div>
+            <div className="insight-chip">💵 Cash: KES {fmt(totalCash)} ({totalRev > 0 ? (totalCash/totalRev*100).toFixed(0) : 0}%)</div>
+            <div className="insight-chip">📱 M-Pesa: KES {fmt(totalMpesa)} ({totalRev > 0 ? (totalMpesa/totalRev*100).toFixed(0) : 0}%)</div>
+            {peakDay && <div className="insight-chip">🔥 Peak day: {peakDay.date} — KES {fmt(peakDay.total)}</div>}
+          </div>
+
+          <div className="chart-card" style={{ marginBottom: "1rem" }}>
+            <div className="chart-title">Daily Revenue — Last {days} Days</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={rows}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                <XAxis dataKey="date" tick={{ fontSize: 9 }} interval={Math.floor(rows.length / 10)} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={v => `KES ${fmt(v)}`} />
+                <Legend />
+                <Bar dataKey="cash"  stackId="a" fill="#2e7d32" name="Cash" />
+                <Bar dataKey="mpesa" stackId="a" fill="#1565c0" name="M-Pesa" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <table className="table">
+            <thead><tr><th>Date</th><th>Cash (KES)</th><th>M-Pesa (KES)</th><th>Total (KES)</th></tr></thead>
+            <tbody>
+              {[...rows].reverse().map(r => (
+                <tr key={r.date} className={r.date === peakDay?.date ? "peak-row" : ""}>
+                  <td>{r.date}</td>
+                  <td>{fmt(r.cash)}</td>
+                  <td>{fmt(r.mpesa)}</td>
+                  <td><strong>{fmt(r.total)}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {loading && <div className="loading">Loading…</div>}
+      {!loading && rows.length === 0 && <p className="muted">No data for this period.</p>}
+    </div>
+  );
+}
+
+// ── Main Reports page ────────────────────────────────────────────────────────
+export default function Reports() {
+  const [tab, setTab]     = useState("overview");
+  const [date, setDate]   = useState(new Date().toISOString().slice(0, 10));
+  const [preset, setPreset] = useState("today");
+
+  const tabs = [
+    { id: "overview",  label: "📊 Overview" },
+    { id: "products",  label: "📦 Products" },
+    { id: "cashflow",  label: "💳 Cashflow" },
+  ];
+
+  return (
+    <div className="reports-page">
+      <div className="page-header"><h1>Reports</h1></div>
+
+      <div className="report-tabs">
+        {tabs.map(t => (
+          <button key={t.id} className={`report-tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="report-body">
+        {tab === "overview" && <OverviewTab date={date} setDate={setDate} preset={preset} setPreset={setPreset} />}
+        {tab === "products" && <ProductsTab />}
+        {tab === "cashflow" && <CashflowTab />}
+      </div>
     </div>
   );
 }

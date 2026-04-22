@@ -11,16 +11,25 @@ from auth import auth
 def create_app(config=Config):
     app = Flask(__name__)
     app.config.from_object(config)
-    CORS(app)
+
+    # ✅ FIXED CORS (correct place)
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000"]}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    )
 
     db.init_app(app)
     Migrate(app, db)
     jwt = JWTManager(app)
 
-    app.register_blueprint(api)
+    # ✅ IMPORTANT: add prefix
+    app.register_blueprint(api, url_prefix="/api")
     app.register_blueprint(auth)
 
-    # ── Blocklist check — runs on every protected request ─────────────────
+    # ── JWT Blocklist ──
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
         return TokenBlocklist.query.filter_by(jti=jwt_payload["jti"]).first() is not None
@@ -37,7 +46,7 @@ def create_app(config=Config):
     def missing_token_response(reason):
         return jsonify({"error": "Authentication required.", "detail": reason}), 401
 
-    # ── Global error handlers ─────────────────────────────────────────────
+    # ── Errors ──
     @app.errorhandler(404)
     def not_found(e):
         return jsonify({"error": "Resource not found"}), 404

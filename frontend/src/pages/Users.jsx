@@ -1,423 +1,170 @@
 import { useEffect, useState } from "react";
-import { authRequest } from "../api";
+import { get_, patch, post } from "../api";
+import { useToast } from "../ToastProvider";
+
+const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
 export default function Users() {
-  const [users, setUsers] = useState([]);
+  const toast = useToast();
+  const [users, setUsers]     = useState([]);
+  const [sales, setSales]     = useState([]);
+  const [filter, setFilter]   = useState("active");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [formData, setFormData] = useState({ name: "", email: "", password: "" });
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [error, setError]     = useState("");
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const load = async () => {
     setLoading(true);
-    setError("");
     try {
-      const data = await authRequest("/auth/users", { method: "GET" });
-      setUsers(data || []);
-    } catch (err) {
-      setError(err.message || "Unable to load cashiers");
-    } finally {
-      setLoading(false);
-    }
+      const [u, s] = await Promise.all([
+        get_(`/auth/users?status=${filter}`),
+        get_("/sales?status=completed"),
+      ]);
+      setUsers(u);
+      setSales(s);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
   };
 
-  const handleCreateCashier = async () => {
-    if (!formData.name || !formData.email || !formData.password) {
-      setError("All fields are required");
-      return;
-    }
-    setError("");
+  useEffect(() => { load(); }, [filter]);
+
+  const setStatus = async (id, status, name) => {
     try {
-      const result = await authRequest("/auth/users", {
-        method: "POST",
-        body: JSON.stringify(formData),
-      });
-      setMessage(result.message || "Cashier created successfully");
-      setFormData({ name: "", email: "", password: "" });
-      setShowCreateModal(false);
-      fetchUsers();
-    } catch (err) {
-      setError(err.message || "Unable to create cashier");
-    }
+      await patch(`/auth/users/${id}/status`, { status });
+      toast(`${name} ${status === "active" ? "approved" : "deactivated"}`, "success");
+      load();
+    } catch (e) { toast(e.message, "error"); }
   };
 
-  const handleEditCashier = async () => {
-    if (!selectedUser) return;
-    if (!formData.name || !formData.email) {
-      setError("Name and email are required");
-      return;
-    }
-    setError("");
+  // Build cashier performance from sales
+  const perfMap = {};
+  sales.forEach(s => {
+    const n = s.cashier_name || "Unknown";
+    if (!perfMap[n]) perfMap[n] = { sales: 0, revenue: 0 };
+    perfMap[n].sales++;
+    perfMap[n].revenue += parseFloat(s.total_amount);
+  });
+
+  const totalPending  = users.filter(u => u.status === "pending").length;
+  const totalActive   = users.filter(u => u.status === "active").length;
+  const totalInactive = users.filter(u => u.status === "inactive").length;
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm]       = useState({ name: "", email: "", password: "" });
+  const [adding, setAdding]   = useState(false);
+
+  const addCashier = async (e) => {
+    e.preventDefault(); setAdding(true);
     try {
-      const result = await authRequest(`/auth/users/${selectedUser.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name: formData.name, email: formData.email }),
-      });
-      setMessage(result.message || "Cashier updated successfully");
-      setShowEditModal(false);
-      setSelectedUser(null);
-      setFormData({ name: "", email: "", password: "" });
-      fetchUsers();
-    } catch (err) {
-      setError(err.message || "Unable to update cashier");
-    }
-  };
-
-  const handleResetPassword = async () => {
-    if (!selectedUser || !formData.password) {
-      setError("Password is required");
-      return;
-    }
-    setError("");
-    try {
-      const result = await authRequest(`/auth/users/${selectedUser.id}/reset-password`, {
-        method: "POST",
-        body: JSON.stringify({ password: formData.password }),
-      });
-      setMessage(result.message || "Password reset successfully");
-      setShowResetModal(false);
-      setSelectedUser(null);
-      setFormData({ name: "", email: "", password: "" });
-      fetchUsers();
-    } catch (err) {
-      setError(err.message || "Unable to reset password");
-    }
-  };
-
-  const handleDeleteCashier = async (userId) => {
-    setError("");
-    try {
-      const result = await authRequest(`/auth/users/${userId}`, { method: "DELETE" });
-      setMessage(result.message || "Cashier deleted successfully");
-      setConfirmDelete(null);
-      fetchUsers();
-    } catch (err) {
-      setError(err.message || "Unable to delete cashier");
-    }
-  };
-
-  const updateStatus = async (userId, status) => {
-    setError("");
-    setMessage("");
-    try {
-      const result = await authRequest(`/auth/users/${userId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      setMessage(result.message || "Status updated");
-      fetchUsers();
-    } catch (err) {
-      setError(err.message || "Unable to update cashier status");
-    }
-  };
-
-  const openCreateModal = () => {
-    setFormData({ name: "", email: "", password: "" });
-    setError("");
-    setShowCreateModal(true);
-  };
-
-  const openEditModal = (user) => {
-    setSelectedUser(user);
-    setFormData({ name: user.name, email: user.email, password: "" });
-    setError("");
-    setShowEditModal(true);
-  };
-
-  const openResetModal = (user) => {
-    setSelectedUser(user);
-    setFormData({ name: "", email: "", password: "" });
-    setError("");
-    setShowResetModal(true);
+      await post("/auth/register", form);
+      // auto-approve
+      const all = await get_("/auth/users?status=pending");
+      const created = all.find(u => u.email === form.email);
+      if (created) await patch(`/auth/users/${created.id}/status`, { status: "active" });
+      toast(`Cashier ${form.name} added and activated`, "success");
+      setShowAdd(false); setForm({ name: "", email: "", password: "" }); load();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setAdding(false); }
   };
 
   return (
-    <div className="card">
-      <h1 className="heading">Cashier Management</h1>
-      {message && <div className="alert success">{message}</div>}
-      {error && <div className="alert error">{error}</div>}
-
-      <div style={{ marginBottom: "1.5rem" }}>
-        <button type="button" className="primary" onClick={openCreateModal}>
-          ➕ Add New Cashier
-        </button>
+    <div className="page-padded">
+      <div className="page-header">
+        <h1>Cashier Management</h1>
+        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Cashier</button>
       </div>
 
-      {loading ? (
-        <p>Loading cashiers…</p>
-      ) : users.length === 0 ? (
-        <p className="small">No cashiers yet. Click "Add New Cashier" to create one.</p>
-      ) : (
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+      {error && <div className="alert alert-error">{error}</div>}
+
+      {/* Stats */}
+      {!loading && (
+        <div className="stat-grid" style={{ marginBottom: "1.5rem" }}>
+          <div className="stat-card"><div className="stat-label">Active Cashiers</div><div className="stat-value">{totalActive}</div></div>
+          <div className="stat-card"><div className="stat-label">Pending Approval</div><div className="stat-value" style={{ color: totalPending > 0 ? "#f57f17" : "inherit" }}>{totalPending}</div></div>
+          <div className="stat-card"><div className="stat-label">Inactive</div><div className="stat-value">{totalInactive}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Transactions</div><div className="stat-value">{sales.length}</div></div>
+        </div>
+      )}
+
+      {/* Cashier performance leaderboard */}
+      {Object.keys(perfMap).length > 0 && (
+        <div className="chart-card" style={{ marginBottom: "1.5rem" }}>
+          <div className="chart-title">Cashier Performance (All Time)</div>
+          <table className="table" style={{ marginTop: "0.5rem" }}>
+            <thead><tr><th>Rank</th><th>Cashier</th><th>Sales</th><th>Revenue (KES)</th><th>Avg Order (KES)</th></tr></thead>
             <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td>{user.name}</td>
-                  <td>{user.email}</td>
-                  <td>
-                    <span style={{
-                      padding: "0.25rem 0.5rem",
-                      borderRadius: "4px",
-                      fontSize: "0.85rem",
-                      backgroundColor: user.status === "active" ? "#d4edda" : "#f8d7da",
-                      color: user.status === "active" ? "#155724" : "#721c24",
-                    }}>
-                      {user.status}
-                    </span>
-                  </td>
-                  <td>{new Date(user.created_at).toLocaleDateString()}</td>
-                  <td className="actions" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => openEditModal(user)}
-                      style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => openResetModal(user)}
-                      style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
-                    >
-                      Reset Pass
-                    </button>
-                    {user.status === "active" && (
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => updateStatus(user.id, "inactive")}
-                        style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
-                      >
-                        Deactivate
-                      </button>
-                    )}
-                    {user.status === "inactive" && (
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={() => updateStatus(user.id, "active")}
-                        style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
-                      >
-                        Activate
-                      </button>
-                    )}
-                    {confirmDelete === user.id ? (
-                      <>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => handleDeleteCashier(user.id)}
-                          style={{ fontSize: "0.75rem", padding: "0.3rem 0.5rem" }}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setConfirmDelete(null)}
-                          style={{ fontSize: "0.75rem", padding: "0.3rem 0.5rem" }}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => setConfirmDelete(user.id)}
-                        style={{ fontSize: "0.85rem", padding: "0.35rem 0.7rem" }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {Object.entries(perfMap)
+                .sort((a, b) => b[1].revenue - a[1].revenue)
+                .map(([name, p], i) => (
+                  <tr key={name}>
+                    <td>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</td>
+                    <td><strong>{name}</strong></td>
+                    <td>{p.sales}</td>
+                    <td>{fmt(p.revenue)}</td>
+                    <td>{fmt(p.revenue / p.sales)}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Create Modal */}
-      {showCreateModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-        }}>
-          <div style={{
-            backgroundColor: "white",
-            padding: "2rem",
-            borderRadius: "8px",
-            maxWidth: "500px",
-            width: "90%",
-          }}>
-            <h2>Add New Cashier</h2>
-            <div className="field">
-              <label htmlFor="create_name">Name</label>
-              <input
-                id="create_name"
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Full name"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="create_email">Email</label>
-              <input
-                id="create_email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="Email address"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="create_password">Password</label>
-              <input
-                id="create_password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Strong password (8+ chars, uppercase, lowercase, number, special char)"
-              />
-            </div>
-            <div className="actions" style={{ marginTop: "1.5rem" }}>
-              <button type="button" className="primary" onClick={handleCreateCashier}>
-                Create Cashier
-              </button>
-              <button type="button" className="secondary" onClick={() => setShowCreateModal(false)}>
-                Cancel
-              </button>
-            </div>
+      {/* Filter tabs */}
+      <div className="report-tabs" style={{ marginBottom: "1rem" }}>
+        {["pending", "active", "inactive"].map(s => (
+          <button key={s} className={`report-tab ${filter === s ? "active" : ""}`} onClick={() => setFilter(s)}>
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Add cashier modal */}
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>Add Cashier</h2>
+            <form onSubmit={addCashier} className="form">
+              <label>Name</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+              <label>Email</label>
+              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+              <label>Password</label>
+              <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 chars, upper, lower, number, special" required />
+              <div className="modal-actions">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
+                <button className="btn btn-primary" disabled={adding}>{adding ? "Adding…" : "Add Cashier"}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Edit Modal */}
-      {showEditModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-        }}>
-          <div style={{
-            backgroundColor: "white",
-            padding: "2rem",
-            borderRadius: "8px",
-            maxWidth: "500px",
-            width: "90%",
-          }}>
-            <h2>Edit Cashier</h2>
-            <div className="field">
-              <label htmlFor="edit_name">Name</label>
-              <input
-                id="edit_name"
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="edit_email">Email</label>
-              <input
-                id="edit_email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div className="actions" style={{ marginTop: "1.5rem" }}>
-              <button type="button" className="primary" onClick={handleEditCashier}>
-                Save Changes
-              </button>
-              <button type="button" className="secondary" onClick={() => setShowEditModal(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reset Password Modal */}
-      {showResetModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-        }}>
-          <div style={{
-            backgroundColor: "white",
-            padding: "2rem",
-            borderRadius: "8px",
-            maxWidth: "500px",
-            width: "90%",
-          }}>
-            <h2>Reset Password for {selectedUser?.name}</h2>
-            <p className="small">Set a new password for this cashier.</p>
-            <div className="field">
-              <label htmlFor="reset_password">New Password</label>
-              <input
-                id="reset_password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Strong password"
-              />
-            </div>
-            <div className="actions" style={{ marginTop: "1.5rem" }}>
-              <button type="button" className="primary" onClick={handleResetPassword}>
-                Reset Password
-              </button>
-              <button type="button" className="secondary" onClick={() => setShowResetModal(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+      {loading ? <div className="loading">Loading…</div> : users.length === 0 ? (
+        <p className="muted">No {filter} cashiers.</p>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Status</th><th>Joined</th><th>All-time Sales</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {users.map(u => {
+              const perf = perfMap[u.name];
+              return (
+                <tr key={u.id}>
+                  <td><strong>{u.name}</strong></td>
+                  <td>{u.email}</td>
+                  <td><span className={`badge badge-${u.status}`}>{u.status}</span></td>
+                  <td>{new Date(u.created_at).toLocaleDateString("en-KE")}</td>
+                  <td>{perf ? `${perf.sales} sales · KES ${fmt(perf.revenue)}` : <span className="muted">No sales yet</span>}</td>
+                  <td className="actions">
+                    {u.status !== "active"   && <button className="btn btn-primary btn-sm" onClick={() => setStatus(u.id, "active", u.name)}>Approve</button>}
+                    {u.status === "active"   && <button className="btn btn-danger btn-sm"  onClick={() => setStatus(u.id, "inactive", u.name)}>Deactivate</button>}
+                    {u.status === "inactive" && <button className="btn btn-outline btn-sm" onClick={() => setStatus(u.id, "active", u.name)}>Reactivate</button>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
     </div>
   );

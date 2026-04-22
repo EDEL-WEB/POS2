@@ -1,249 +1,156 @@
-import { useEffect, useState } from "react";
-import { authRequest } from "../api";
+import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { get_, patch } from "../api";
+import { useAuth } from "../AuthProvider";
+import { useToast } from "../ToastProvider";
+
+const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
 export default function Inventory() {
+  const { user } = useAuth();
+  const toast = useToast();
   const [products, setProducts] = useState([]);
-  const [lowStock, setLowStock] = useState([]);
-  const [inventoryValue, setInventoryValue] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [adjustment, setAdjustment] = useState(0);
-  const [reason, setReason] = useState("");
-  const [importData, setImportData] = useState("");
-  const [threshold, setThreshold] = useState(5);
+  const [topProducts, setTop]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
+  const [adjusting, setAdjusting] = useState(null);
+  const [adj, setAdj]           = useState("");
+  const [filter, setFilter]     = useState("all"); // all | low | out | fast | slow
 
-  useEffect(() => {
-    fetchInventoryData();
-  }, []);
-
-  const fetchInventoryData = async () => {
+  const load = async () => {
     setLoading(true);
-    setError("");
     try {
-      const [productsRes, lowStockRes, valueRes] = await Promise.all([
-        authRequest("/products", { method: "GET" }),
-        authRequest(`/products/low-stock?threshold=${threshold}`, { method: "GET" }),
-        authRequest("/inventory/value", { method: "GET" }),
+      const [prods, top] = await Promise.all([
+        get_("/products"),
+        get_("/reports/top-products?limit=10"),
       ]);
-      setProducts(productsRes);
-      setLowStock(lowStockRes);
-      setInventoryValue(valueRes);
-    } catch (err) {
-      setError(err.message || "Unable to load inventory data");
-    } finally {
-      setLoading(false);
-    }
+      setProducts(prods);
+      setTop(top);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
   };
 
-  const handleAdjustStock = async (productId) => {
-    if (!adjustment) return;
+  useEffect(() => { load(); }, []);
+
+  const saveAdj = async (e) => {
+    e.preventDefault();
     try {
-      const data = await authRequest(`/products/${productId}/stock`, {
-        method: "PATCH",
-        body: JSON.stringify({ adjustment: parseInt(adjustment), reason }),
-      });
-      setProducts(products.map(p => p.id === productId ? data.product : p));
-      setShowAdjustModal(false);
-      setAdjustment(0);
-      setReason("");
-      setSelectedProduct(null);
-      await fetchInventoryData(); // Refresh low stock and value
-    } catch (err) {
-      setError(err.message || "Unable to adjust stock");
-    }
+      await patch(`/products/${adjusting.id}/stock`, { adjustment: parseInt(adj) });
+      toast(`Stock adjusted for ${adjusting.name}`, "success");
+      setAdjusting(null); setAdj("");
+      load();
+    } catch (e) { toast(e.message, "error"); }
   };
 
-  const handleBulkImport = async () => {
-    try {
-      let productsData;
-      try {
-        productsData = JSON.parse(importData);
-      } catch {
-        setError("Invalid JSON format");
-        return;
-      }
-      const result = await authRequest("/products/bulk-import", {
-        method: "POST",
-        body: JSON.stringify({ products: productsData }),
-      });
-      setShowImportModal(false);
-      setImportData("");
-      if (result.imported > 0) {
-        await fetchInventoryData();
-      }
-      alert(`Imported ${result.imported} products. Errors: ${result.errors.length}`);
-    } catch (err) {
-      setError(err.message || "Unable to import products");
-    }
-  };
+  // Categorize products
+  const lowStock  = products.filter(p => p.stock_quantity > 0 && p.stock_quantity <= 5);
+  const outStock  = products.filter(p => p.stock_quantity === 0);
+  const fastMoving = products.filter(p => topProducts.some(t => t.name === p.name));
+  const slowMoving = products.filter(p => !topProducts.some(t => t.name === p.name) && p.stock_quantity > 0);
 
-  const handleThresholdChange = async (newThreshold) => {
-    setThreshold(newThreshold);
-    try {
-      const data = await authRequest(`/products/low-stock?threshold=${newThreshold}`, { method: "GET" });
-      setLowStock(data);
-    } catch (err) {
-      setError(err.message || "Unable to update low stock");
-    }
-  };
+  const filtered = useMemo(() => {
+    if (filter === "low") return lowStock;
+    if (filter === "out") return outStock;
+    if (filter === "fast") return fastMoving;
+    if (filter === "slow") return slowMoving;
+    return products;
+  }, [filter, products, lowStock, outStock, fastMoving, slowMoving]);
+
+  const stockValue = products.reduce((s, p) => s + p.price * p.stock_quantity, 0);
 
   return (
-    <div className="card">
-      <h1 className="heading">Inventory Management</h1>
-
-      {error && <div className="alert error">{error}</div>}
-
-      <div className="stat-grid" style={{ marginBottom: "1rem" }}>
-        <div className="stat-card">
-          <h3>Total Products</h3>
-          <p>{inventoryValue?.total_products ?? 0}</p>
-        </div>
-        <div className="stat-card">
-          <h3>Inventory Value</h3>
-          <p>KES {inventoryValue?.total_value?.toFixed(2) ?? "0.00"}</p>
-        </div>
-        <div className="stat-card">
-          <h3>Low Stock Items</h3>
-          <p>{lowStock.length}</p>
-        </div>
+    <div className="page-padded">
+      <div className="page-header">
+        <h1>Inventory Intelligence</h1>
+        <Link to="/products" className="btn btn-outline">Manage Products</Link>
       </div>
 
-      <div style={{ marginBottom: "1rem" }}>
-        <button className="primary" onClick={() => setShowImportModal(true)}>Bulk Import</button>
-      </div>
+      {error && <div className="alert alert-error">{error}</div>}
 
-      {loading ? (
-        <p>Loading inventory…</p>
-      ) : (
+      {/* Alerts */}
+      {!loading && (
         <>
-          <div className="card" style={{ marginBottom: "1rem" }}>
-            <h2>All Products</h2>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th>Stock</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((product) => (
-                    <tr key={product.id}>
-                      <td>{product.name}</td>
-                      <td>KES {product.price.toFixed(2)}</td>
-                      <td>{product.stock_quantity}</td>
-                      <td>
-                        <button
-                          onClick={() => {
-                            setSelectedProduct(product);
-                            setShowAdjustModal(true);
-                          }}
-                        >
-                          Adjust Stock
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="card">
-            <h2>
-              Low Stock Products
-              <div className="field" style={{ display: "inline-block", marginLeft: "1rem", maxWidth: "10rem" }}>
-                <label htmlFor="threshold">Threshold:</label>
-                <input
-                  id="threshold"
-                  type="number"
-                  min="0"
-                  value={threshold}
-                  onChange={(e) => handleThresholdChange(parseInt(e.target.value))}
-                />
-              </div>
-            </h2>
-            {lowStock.length ? (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Price</th>
-                      <th>Stock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lowStock.map((product) => (
-                      <tr key={product.id}>
-                        <td>{product.name}</td>
-                        <td>KES {product.price.toFixed(2)}</td>
-                        <td>{product.stock_quantity}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="small">No products below threshold.</p>
-            )}
-          </div>
+          {outStock.length > 0 && (
+            <div className="alert alert-error">❌ {outStock.length} product{outStock.length > 1 ? "s" : ""} out of stock</div>
+          )}
+          {lowStock.length > 0 && (
+            <div className="alert alert-warn">⚠️ {lowStock.length} product{lowStock.length > 1 ? "s" : ""} running low</div>
+          )}
         </>
       )}
 
-      {showAdjustModal && selectedProduct && (
-        <div className="modal-overlay" onClick={() => setShowAdjustModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Adjust Stock: {selectedProduct.name}</h2>
-            <div className="field">
-              <label htmlFor="adjustment">Adjustment (positive to add, negative to subtract)</label>
-              <input
-                id="adjustment"
-                type="number"
-                value={adjustment}
-                onChange={(e) => setAdjustment(e.target.value)}
-                placeholder="e.g., 10 or -5"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="reason">Reason (optional)</label>
-              <input
-                id="reason"
-                type="text"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g., Restock, Damaged goods"
-              />
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-              <button onClick={() => setShowAdjustModal(false)}>Cancel</button>
-              <button className="primary" onClick={() => handleAdjustStock(selectedProduct.id)}>Adjust</button>
-            </div>
-          </div>
+      {/* Stats */}
+      {!loading && (
+        <div className="stat-grid" style={{ marginBottom: "1.5rem" }}>
+          <div className="stat-card"><div className="stat-label">Total Products</div><div className="stat-value">{products.length}</div></div>
+          <div className="stat-card"><div className="stat-label">Stock Value</div><div className="stat-value">KES {fmt(stockValue)}</div></div>
+          <div className="stat-card"><div className="stat-label">Low Stock</div><div className="stat-value" style={{ color: lowStock.length > 0 ? "#f57f17" : "inherit" }}>{lowStock.length}</div></div>
+          <div className="stat-card"><div className="stat-label">Out of Stock</div><div className="stat-value" style={{ color: outStock.length > 0 ? "#c62828" : "inherit" }}>{outStock.length}</div></div>
+          <div className="stat-card"><div className="stat-label">Fast Moving</div><div className="stat-value">{fastMoving.length}</div></div>
+          <div className="stat-card"><div className="stat-label">Slow Moving</div><div className="stat-value">{slowMoving.length}</div></div>
         </div>
       )}
 
-      {showImportModal && (
-        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Bulk Import Products</h2>
-            <p>Enter JSON array of products:</p>
-            <textarea
-              value={importData}
-              onChange={(e) => setImportData(e.target.value)}
-              placeholder='[{"name": "Product 1", "price": 10.00, "stock_quantity": 100}, ...]'
-              rows={10}
-              style={{ width: "100%", fontFamily: "monospace" }}
-            />
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
-              <button onClick={() => setShowImportModal(false)}>Cancel</button>
-              <button className="primary" onClick={handleBulkImport}>Import</button>
-            </div>
+      {/* Filter tabs */}
+      <div className="report-tabs" style={{ marginBottom: "1rem" }}>
+        {[
+          { id: "all",  label: `All (${products.length})` },
+          { id: "low",  label: `⚠️ Low Stock (${lowStock.length})` },
+          { id: "out",  label: `❌ Out (${outStock.length})` },
+          { id: "fast", label: `🔥 Fast Moving (${fastMoving.length})` },
+          { id: "slow", label: `🐢 Slow Moving (${slowMoving.length})` },
+        ].map(t => (
+          <button key={t.id} className={`report-tab ${filter === t.id ? "active" : ""}`} onClick={() => setFilter(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <div className="loading">Loading…</div> : (
+        <table className="table">
+          <thead>
+            <tr><th>Product</th><th>Price (KES)</th><th>Stock</th><th>Status</th><th>Stock Value</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {filtered.map(p => {
+              const status = p.stock_quantity === 0 ? "Out" : p.stock_quantity <= 5 ? "Low" : "OK";
+              const cls = p.stock_quantity === 0 ? "stock-out" : p.stock_quantity <= 5 ? "stock-low" : "stock-ok";
+              return (
+                <tr key={p.id}>
+                  <td><strong>{p.name}</strong></td>
+                  <td>KES {fmt(p.price)}</td>
+                  <td>{p.stock_quantity}</td>
+                  <td><span className={`stock-badge ${cls}`}>{status}</span></td>
+                  <td>KES {fmt(p.price * p.stock_quantity)}</td>
+                  <td className="actions">
+                    {user?.role === "owner" && (
+                      <button className="btn btn-outline btn-sm" onClick={() => { setAdjusting(p); setAdj(""); }}>📦 Adjust</button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: "2rem" }}>No products in this category.</td></tr>
+            )}
+          </tbody>
+        </table>
+      )}
+
+      {/* Adjust modal */}
+      {adjusting && (
+        <div className="modal-overlay" onClick={() => setAdjusting(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>📦 Adjust Stock — {adjusting.name}</h2>
+            <p className="muted" style={{ marginBottom: "1rem" }}>Current: <strong>{adjusting.stock_quantity}</strong> units. Use +10 to add, -3 to remove.</p>
+            <form onSubmit={saveAdj} className="form">
+              <label>Adjustment</label>
+              <input type="number" value={adj} onChange={e => setAdj(e.target.value)} placeholder="e.g. +10 or -3" required />
+              <div className="modal-actions">
+                <button type="button" className="btn btn-outline" onClick={() => setAdjusting(null)}>Cancel</button>
+                <button className="btn btn-primary">Save</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

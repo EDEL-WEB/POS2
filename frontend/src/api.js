@@ -1,148 +1,42 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
+const BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
-function getStoredValue(key) {
-  return typeof window !== "undefined" ? localStorage.getItem(key) : null;
-}
+const get = (key) => localStorage.getItem(key);
+const set = (key, val) => localStorage.setItem(key, val);
+const del = (key) => localStorage.removeItem(key);
 
-function saveStoredValue(key, value) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(key, value);
-  }
-}
+export const getStoredUser = () => {
+  const u = get("pos_user");
+  return u ? JSON.parse(u) : null;
+};
 
-function removeStoredValue(key) {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(key);
-  }
-}
+export const saveAuthData = ({ access_token, refresh_token, user }) => {
+  set("pos_access", access_token);
+  set("pos_refresh", refresh_token);
+  set("pos_user", JSON.stringify(user));
+};
 
-export function getStoredUser() {
-  const user = getStoredValue("pos2_user");
-  return user ? JSON.parse(user) : null;
-}
+export const clearAuthData = () => {
+  del("pos_access");
+  del("pos_refresh");
+  del("pos_user");
+};
 
-export function saveAuthData({ access_token, refresh_token, user }) {
-  saveStoredValue("pos2_access_token", access_token);
-  saveStoredValue("pos2_refresh_token", refresh_token);
-  saveStoredValue("pos2_user", JSON.stringify(user));
-}
-
-export function clearAuthData() {
-  removeStoredValue("pos2_access_token");
-  removeStoredValue("pos2_refresh_token");
-  removeStoredValue("pos2_user");
-}
-
-function getAuthHeaders() {
-  const token = getStoredValue("pos2_access_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function parseJson(response) {
-  const text = await response.text();
+async function parseJson(res) {
+  const text = await res.text();
   if (!text) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+async function attemptRefresh() {
+  const token = get("pos_refresh");
+  if (!token) return false;
   try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-async function request(path, options = {}) {
-  const url = `${API_BASE_URL}${path}`;
-  let response;
-  try {
-    response = await fetch(url, options);
-  } catch (err) {
-    throw new Error(
-      `Network error: unable to reach backend at ${API_BASE_URL}. ` +
-        "Check that the backend is running and that CORS is enabled."
-    );
-  }
-
-  const data = await parseJson(response);
-  if (!response.ok) {
-    const message = data?.error || response.statusText || "Request failed";
-    const error = new Error(message);
-    error.status = response.status;
-    error.payload = data;
-    throw error;
-  }
-  return data;
-}
-
-export async function post(path, body) {
-  return request(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-export async function patch(path, body) {
-  return request(path, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-export async function del(path) {
-  return request(path, {
-    method: "DELETE",
-  });
-}
-
-export async function authRequest(path, options = {}) {
-  const headers = { "Content-Type": "application/json", ...getAuthHeaders(), ...options.headers };
-  let response;
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  } catch (err) {
-    throw new Error(
-      `Network error: unable to reach backend at ${API_BASE_URL}. ` +
-        "Check that the backend is running and that CORS is enabled."
-    );
-  }
-
-  const data = await parseJson(response);
-  if (response.ok) {
-    return data;
-  }
-
-  if (response.status === 401) {
-    const refreshed = await attemptRefresh();
-    if (refreshed) {
-      return authRequest(path, options);
-    }
-  }
-
-  const message = data?.error || response.statusText || "Request failed";
-  const error = new Error(message);
-  error.status = response.status;
-  error.payload = data;
-  throw error;
-}
-
-export async function attemptRefresh() {
-  const refreshToken = getStoredValue("pos2_refresh_token");
-  if (!refreshToken) {
-    return false;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    const res = await fetch(`${BASE}/auth/refresh`, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${refreshToken}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     });
-    const data = await parseJson(response);
-    if (!response.ok) {
-      clearAuthData();
-      return false;
-    }
+    const data = await parseJson(res);
+    if (!res.ok) { clearAuthData(); return false; }
     saveAuthData(data);
     return true;
   } catch {
@@ -151,23 +45,72 @@ export async function attemptRefresh() {
   }
 }
 
-export async function loginUser(credentials) {
-  return post("/auth/login", credentials);
-}
+export async function api(path, options = {}) {
+  const token = get("pos_access");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
 
-export async function registerUser(payload) {
-  return post("/auth/register", payload);
-}
-
-export async function bootstrapOwner(payload) {
-  return post("/auth/bootstrap", payload);
-}
-
-export async function logoutUser() {
+  let res;
   try {
-    await authRequest("/auth/logout", { method: "POST" });
+    res = await fetch(`${BASE}${path}`, { ...options, headers });
   } catch {
-    // ignore logout failures
+    throw new Error("Cannot reach server. Is the backend running?");
   }
-  clearAuthData();
+
+  const data = await parseJson(res);
+
+  if (res.status === 401) {
+    const refreshed = await attemptRefresh();
+    if (refreshed) return api(path, options);
+  }
+
+  if (!res.ok) {
+    const err = new Error(data?.error || res.statusText || "Request failed");
+    err.status = res.status;
+    throw err;
+  }
+  return data;
 }
+
+export const get_ = (path) => api(path, { method: "GET" });
+export const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body) });
+export const patch = (path, body) => api(path, { method: "PATCH", body: JSON.stringify(body) });
+export const del_ = (path) => api(path, { method: "DELETE" });
+export const put = (path, body) => api(path, { method: "PUT", body: JSON.stringify(body) });
+
+// Auth helpers (no token needed)
+export const loginUser = (body) =>
+  fetch(`${BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(async (res) => {
+    const data = await parseJson(res);
+    if (!res.ok) { const e = new Error(data?.error || "Login failed"); e.status = res.status; e.payload = data; throw e; }
+    return data;
+  });
+
+export const registerUser = (body) =>
+  fetch(`${BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(async (res) => {
+    const data = await parseJson(res);
+    if (!res.ok) { const e = new Error(data?.error || "Registration failed"); e.status = res.status; throw e; }
+    return data;
+  });
+
+export const bootstrapOwner = (body) =>
+  fetch(`${BASE}/auth/bootstrap`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(async (res) => {
+    const data = await parseJson(res);
+    if (!res.ok) { const e = new Error(data?.error || "Bootstrap failed"); e.status = res.status; throw e; }
+    return data;
+  });
