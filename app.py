@@ -1,4 +1,5 @@
 import os
+import re
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -22,6 +23,7 @@ def create_app(config=Config):
             "http://localhost:3002", "http://127.0.0.1:3002",
             "http://localhost:3003", "http://127.0.0.1:3003",
             os.environ.get("FRONTEND_URL", ""),
+            re.compile(r"https://.*\.vercel\.app"),
         ],
         supports_credentials=True,
         allow_headers=["Content-Type", "Authorization"],
