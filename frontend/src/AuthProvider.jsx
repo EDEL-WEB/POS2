@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { getStoredUser, saveAuthData, clearAuthData, loginUser, registerUser, bootstrapOwner, api } from "./api";
+import { getStoredUser, saveAuthData, clearAuthData, loginUser, registerUser, bootstrapOwner, authApi } from "./api";
 
 const Ctx = createContext(null);
 
@@ -32,7 +32,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
-    try { await api("/auth/logout", { method: "POST" }); } catch {}
+    try { await authApi("/auth/logout", { method: "POST" }); } catch {}
     clearAuthData();
     setUser(null);
   };

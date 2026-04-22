@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { get_ } from "../api";
 import { useAuth } from "../AuthProvider";
+import { productImageUrl } from "../imageUtils";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -199,9 +200,7 @@ export default function Dashboard() {
         {/* Top products bar */}
         <div className="chart-card">
           <div className="chart-title">Top Products (All Time)</div>
-          {topProducts.length === 0 ? (
-            <p className="muted" style={{ padding: "2rem", textAlign: "center" }}>No data yet</p>
-          ) : (
+          {topProducts.length > 0 && (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={topProducts} layout="vertical">
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `${v}`} />
@@ -211,6 +210,7 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           )}
+          {topProducts.length === 0 && <p className="muted" style={{ padding: "2rem", textAlign: "center" }}>No data yet</p>}
         </div>
       </div>
 
@@ -258,6 +258,7 @@ export default function Dashboard() {
               <div className="alert-list">
                 {lowStock.map(p => (
                   <div key={p.id} className={`stock-alert ${p.stock_quantity === 0 ? "out" : "low"}`}>
+                    <img src={productImageUrl(p)} alt={p.name} className="stock-alert-img" loading="lazy" />
                     <span>{p.name}</span>
                     <span className={`badge ${p.stock_quantity === 0 ? "badge-cancelled" : "badge-warning"}`}>
                       {p.stock_quantity === 0 ? "Out of stock" : `${p.stock_quantity} left`}

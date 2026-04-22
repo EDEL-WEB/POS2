@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { get_, post } from "../api";
 import { useToast } from "../ToastProvider";
+import { productImageUrl } from "../imageUtils";
 
 const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
@@ -111,6 +112,7 @@ export default function Sales() {
             <div className="product-grid">
               {filtered.map(p => (
                 <div key={p.id} className="product-tile" onClick={() => addToCart(p)}>
+                  <img src={productImageUrl(p)} alt={p.name} className="product-tile-img" loading="lazy" />
                   <div className="product-tile-name">{p.name}</div>
                   <div className="product-tile-price">KES {fmt(p.price)}</div>
                   <div className="product-tile-stock">Stock: {p.stock_quantity}</div>

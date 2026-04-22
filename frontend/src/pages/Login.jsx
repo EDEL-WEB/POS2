@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Login() {
   const { login, loading } = useAuth();
@@ -30,7 +31,7 @@ export default function Login() {
           <label>Email</label>
           <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
           <label>Password</label>
-          <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+          <PasswordInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoComplete="current-password" required />
           <button className="btn btn-primary" disabled={loading}>{loading ? "Signing in…" : "Sign In"}</button>
         </form>
         <p className="auth-footer">

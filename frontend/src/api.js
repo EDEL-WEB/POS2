@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
+const BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000/api";
+const BASE_ROOT = BASE.replace(/\/api$/, "");
 
 const get = (key) => localStorage.getItem(key);
 const set = (key, val) => localStorage.setItem(key, val);
@@ -31,7 +32,7 @@ async function attemptRefresh() {
   const token = get("pos_refresh");
   if (!token) return false;
   try {
-    const res = await fetch(`${BASE}/auth/refresh`, {
+    const res = await fetch(`${BASE_ROOT}/auth/refresh`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     });
@@ -75,6 +76,29 @@ export async function api(path, options = {}) {
   return data;
 }
 
+// For /auth/* routes (no /api prefix)
+export async function authApi(path, options = {}) {
+  const token = get("pos_access");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
+  let res;
+  try {
+    res = await fetch(`${BASE_ROOT}${path}`, { ...options, headers });
+  } catch {
+    throw new Error("Cannot reach server. Is the backend running?");
+  }
+  const data = await parseJson(res);
+  if (!res.ok) {
+    const err = new Error(data?.error || res.statusText || "Request failed");
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 export const get_ = (path) => api(path, { method: "GET" });
 export const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body) });
 export const patch = (path, body) => api(path, { method: "PATCH", body: JSON.stringify(body) });
@@ -83,7 +107,7 @@ export const put = (path, body) => api(path, { method: "PUT", body: JSON.stringi
 
 // Auth helpers (no token needed)
 export const loginUser = (body) =>
-  fetch(`${BASE}/auth/login`, {
+  fetch(`${BASE_ROOT}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -94,7 +118,7 @@ export const loginUser = (body) =>
   });
 
 export const registerUser = (body) =>
-  fetch(`${BASE}/auth/register`, {
+  fetch(`${BASE_ROOT}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -105,7 +129,7 @@ export const registerUser = (body) =>
   });
 
 export const bootstrapOwner = (body) =>
-  fetch(`${BASE}/auth/bootstrap`, {
+  fetch(`${BASE_ROOT}/auth/bootstrap`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

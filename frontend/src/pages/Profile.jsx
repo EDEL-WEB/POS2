@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../AuthProvider";
-import { api } from "../api";
+import { authApi } from "../api";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -13,7 +14,7 @@ export default function Profile() {
     e.preventDefault();
     setError(""); setSuccess(""); setLoading(true);
     try {
-      await api("/auth/change-password", { method: "POST", body: JSON.stringify(form) });
+      await authApi("/auth/change-password", { method: "POST", body: JSON.stringify(form) });
       setSuccess("Password updated successfully.");
       setForm({ current_password: "", new_password: "" });
     } catch (e) { setError(e.message); }
@@ -35,9 +36,9 @@ export default function Profile() {
       {success && <div className="alert alert-success">{success}</div>}
       <form onSubmit={handle} className="form">
         <label>Current Password</label>
-        <input type="password" value={form.current_password} onChange={e => setForm(f => ({ ...f, current_password: e.target.value }))} required />
+        <PasswordInput value={form.current_password} onChange={e => setForm(f => ({ ...f, current_password: e.target.value }))} autoComplete="current-password" required />
         <label>New Password</label>
-        <input type="password" value={form.new_password} onChange={e => setForm(f => ({ ...f, new_password: e.target.value }))} required />
+        <PasswordInput value={form.new_password} onChange={e => setForm(f => ({ ...f, new_password: e.target.value }))} autoComplete="new-password" required />
         <button className="btn btn-primary" disabled={loading}>{loading ? "Saving…" : "Update Password"}</button>
       </form>
     </div>

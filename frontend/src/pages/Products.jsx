@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { get_, post, patch, del_ } from "../api";
 import { useAuth } from "../AuthProvider";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { productImageUrl, uploadImage } from "../imageUtils";
 
 const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
@@ -30,16 +31,20 @@ export default function Products() {
   // modals
   const [modal, setModal]         = useState(null); // null | "add" | product
   const [detailProduct, setDetail] = useState(null);
-  const [form, setForm]           = useState({ name: "", price: "", stock_quantity: "" });
+  const [form, setForm]           = useState({ name: "", price: "", stock_quantity: "", image_url: "" });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
   const [adjProduct, setAdjProduct] = useState(null);
   const [adjValue, setAdjValue]   = useState("");
   const [saving, setSaving]       = useState(false);
+
+  const [showInactive, setShowInactive] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
       const [prods, top] = await Promise.all([
-        get_("/products"),
+        get_(`/products${showInactive ? "?include_inactive=true" : ""}`),
         get_("/reports/top-products?limit=5"),
       ]);
       setProducts(prods);
@@ -48,7 +53,7 @@ export default function Products() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [showInactive]);
 
   // ── Derived stats ──────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -74,18 +79,23 @@ export default function Products() {
   }, [products, search, minPrice, maxPrice, stockFilter]);
 
   // ── CRUD ───────────────────────────────────────────────────────────────
-  const openAdd  = () => { setForm({ name: "", price: "", stock_quantity: "" }); setModal("add"); };
-  const openEdit = (p) => { setForm({ name: p.name, price: p.price, stock_quantity: p.stock_quantity }); setModal(p); };
+  const openAdd  = () => { setForm({ name: "", price: "", stock_quantity: "", image_url: "" }); setImageFile(null); setImagePreview(""); setModal("add"); };
+  const openEdit = (p) => { setForm({ name: p.name, price: p.price, stock_quantity: p.stock_quantity, image_url: p.image_url || "" }); setImageFile(null); setImagePreview(p.image_url ? productImageUrl(p) : ""); setModal(p); };
 
   const save = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
-      if (modal === "add") {
-        await post("/products", { name: form.name, price: parseFloat(form.price), stock_quantity: parseInt(form.stock_quantity) });
-      } else {
-        await patch(`/products/${modal.id}`, { price: parseFloat(form.price), stock_quantity: parseInt(form.stock_quantity) });
+      let image_url = form.image_url;
+      if (imageFile) {
+        const uploaded = await uploadImage(imageFile);
+        image_url = uploaded.image_url;
       }
-      setModal(null); load();
+      if (modal === "add") {
+        await post("/products", { name: form.name, price: parseFloat(form.price), stock_quantity: parseInt(form.stock_quantity), image_url: image_url || undefined });
+      } else {
+        await patch(`/products/${modal.id}`, { price: parseFloat(form.price), stock_quantity: parseInt(form.stock_quantity), image_url: image_url || undefined });
+      }
+      setModal(null); setImageFile(null); setImagePreview(""); load();
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   };
@@ -93,6 +103,11 @@ export default function Products() {
   const remove = async (p) => {
     if (!confirm(`Delete "${p.name}"?`)) return;
     try { await del_(`/products/${p.id}`); load(); }
+    catch (e) { setError(e.message); }
+  };
+
+  const reactivate = async (p) => {
+    try { await patch(`/products/${p.id}`, { is_active: true }); load(); }
     catch (e) { setError(e.message); }
   };
 
@@ -118,6 +133,7 @@ export default function Products() {
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <button className={`btn btn-outline btn-sm ${viewMode === "table" ? "active-view" : ""}`} onClick={() => setViewMode("table")}>☰ Table</button>
           <button className={`btn btn-outline btn-sm ${viewMode === "grid" ? "active-view" : ""}`} onClick={() => setViewMode("grid")}>⊞ Grid</button>
+          {isOwner && <button className={`btn btn-outline btn-sm ${showInactive ? "active-view" : ""}`} onClick={() => setShowInactive(v => !v)}>🗃 {showInactive ? "Hide Inactive" : "Show Inactive"}</button>}
           {isOwner && <button className="btn btn-primary" onClick={openAdd}>+ Add Product</button>}
         </div>
       </div>
@@ -179,9 +195,10 @@ export default function Products() {
             {filtered.map(p => {
               const s = stockStatus(p.stock_quantity);
               return (
-                <tr key={p.id}>
+                <tr key={p.id} style={!p.is_active ? { opacity: 0.5 } : {}}>
                   <td>
                     <button className="prod-name-btn" onClick={() => setDetail(p)}>{p.name}</button>
+                    {!p.is_active && <span className="badge badge-inactive" style={{ marginLeft: "0.5rem" }}>Inactive</span>}
                   </td>
                   <td className="price-cell">KES {fmt(p.price)}</td>
                   <td>{p.stock_quantity}</td>
@@ -189,9 +206,15 @@ export default function Products() {
                   <td>KES {fmt(p.price * p.stock_quantity)}</td>
                   {isOwner && (
                     <td className="actions">
-                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(p)}>✏️ Edit</button>
-                      <button className="btn btn-outline btn-sm" onClick={() => { setAdjProduct(p); setAdjValue(""); }}>📦 Stock</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => remove(p)}>🗑</button>
+                      {p.is_active ? (
+                        <>
+                          <button className="btn btn-outline btn-sm" onClick={() => openEdit(p)}>✏️ Edit</button>
+                          <button className="btn btn-outline btn-sm" onClick={() => { setAdjProduct(p); setAdjValue(""); }}>📦 Stock</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => remove(p)}>🗑</button>
+                        </>
+                      ) : (
+                        <button className="btn btn-primary btn-sm" onClick={() => reactivate(p)}>↩ Reactivate</button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -209,7 +232,7 @@ export default function Products() {
             const s = stockStatus(p.stock_quantity);
             return (
               <div key={p.id} className="prod-card" onClick={() => setDetail(p)}>
-                <div className="prod-card-icon">🧴</div>
+                <img src={productImageUrl(p)} alt={p.name} className="prod-card-img" loading="lazy" />
                 <div className="prod-card-name">{p.name}</div>
                 <div className="prod-card-price">KES {fmt(p.price)}</div>
                 <span className={`stock-badge ${s.cls}`}>{s.label} ({p.stock_quantity})</span>
@@ -239,6 +262,12 @@ export default function Products() {
               <input type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required />
               <label>Stock Quantity</label>
               <input type="number" min="0" value={form.stock_quantity} onChange={e => setForm(f => ({ ...f, stock_quantity: e.target.value }))} required />
+              <label>Product Image</label>
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => {
+                const file = e.target.files[0];
+                if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
+              }} />
+              {imagePreview && <img src={imagePreview} alt="preview" style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 8, marginTop: "0.5rem" }} />}
               <div className="modal-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setModal(null)}>Cancel</button>
                 <button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Save"}</button>
@@ -270,9 +299,11 @@ export default function Products() {
       {detailProduct && (
         <div className="modal-overlay" onClick={() => setDetail(null)}>
           <div className="modal modal-wide" onClick={e => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
-              <h2>🧴 {detailProduct.name}</h2>
-              <button className="btn btn-outline btn-sm" onClick={() => setDetail(null)}>✕ Close</button>
+            <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", marginBottom: "1.25rem" }}>
+              <img src={productImageUrl(detailProduct)} alt={detailProduct.name} className="detail-img" />
+              <div>
+                <h2>{detailProduct.name}</h2>
+              </div>
             </div>
             <div className="detail-grid">
               <div className="detail-row"><span>Price</span><strong>KES {fmt(detailProduct.price)}</strong></div>

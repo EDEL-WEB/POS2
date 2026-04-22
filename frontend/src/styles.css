@@ -365,3 +365,16 @@ input:focus, select:focus, textarea:focus {
 /* ── Logo ── */
 .nav-logo { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; object-position: center 20%; }
 .auth-logo { width: 200px; height: 200px; border-radius: 50%; object-fit: cover; object-position: center 20%; display: block; margin: 0 auto 0.75rem; }
+
+/* ── Product images ── */
+.prod-card-img { width: 100%; height: 140px; object-fit: cover; border-radius: 8px; margin-bottom: 0.5rem; background: #f0e8d8; }
+.detail-img { width: 100px; height: 100px; object-fit: cover; border-radius: 10px; flex-shrink: 0; border: 1px solid var(--border); }
+.product-tile-img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; margin-bottom: 0.5rem; background: #f0e8d8; }
+.stock-alert-img { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.stock-alert { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.85rem; }
+
+/* ── Password input ── */
+.password-input-wrap { position: relative; display: flex; align-items: center; }
+.password-input-wrap input { width: 100%; padding-right: 2.75rem; }
+.password-toggle { position: absolute; right: 0.6rem; background: none; border: none; padding: 0.25rem; cursor: pointer; font-size: 1rem; border-radius: 4px; line-height: 1; }
+.password-toggle:hover { background: rgba(200,164,92,0.15); }

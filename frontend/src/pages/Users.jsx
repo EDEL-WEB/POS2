@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { get_, patch, post } from "../api";
+import { get_, authApi } from "../api";
 import { useToast } from "../ToastProvider";
+import PasswordInput from "../components/PasswordInput";
 
 const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
@@ -16,7 +17,7 @@ export default function Users() {
     setLoading(true);
     try {
       const [u, s] = await Promise.all([
-        get_(`/auth/users?status=${filter}`),
+        authApi(`/auth/users?status=${filter}`),
         get_("/sales?status=completed"),
       ]);
       setUsers(u);
@@ -29,7 +30,7 @@ export default function Users() {
 
   const setStatus = async (id, status, name) => {
     try {
-      await patch(`/auth/users/${id}/status`, { status });
+      await authApi(`/auth/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
       toast(`${name} ${status === "active" ? "approved" : "deactivated"}`, "success");
       load();
     } catch (e) { toast(e.message, "error"); }
@@ -55,11 +56,11 @@ export default function Users() {
   const addCashier = async (e) => {
     e.preventDefault(); setAdding(true);
     try {
-      await post("/auth/register", form);
+      await authApi("/auth/register", { method: "POST", body: JSON.stringify(form) });
       // auto-approve
-      const all = await get_("/auth/users?status=pending");
+      const all = await authApi(`/auth/users?status=pending`);
       const created = all.find(u => u.email === form.email);
-      if (created) await patch(`/auth/users/${created.id}/status`, { status: "active" });
+      if (created) await authApi(`/auth/users/${created.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "active" }) });
       toast(`Cashier ${form.name} added and activated`, "success");
       setShowAdd(false); setForm({ name: "", email: "", password: "" }); load();
     } catch (e) { toast(e.message, "error"); }
@@ -128,7 +129,7 @@ export default function Users() {
               <label>Email</label>
               <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
               <label>Password</label>
-              <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 chars, upper, lower, number, special" required />
+              <PasswordInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 chars, upper, lower, number, special" required />
               <div className="modal-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
                 <button className="btn btn-primary" disabled={adding}>{adding ? "Adding…" : "Add Cashier"}</button>

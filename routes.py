@@ -1,12 +1,20 @@
+import os
 import base64
 import secrets
 import requests
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
+from werkzeug.utils import secure_filename
 from models import db, Product, Sale, SaleItem, Payment, Settings, User
 
 api = Blueprint("api", __name__)
+
+
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -68,12 +76,44 @@ def get_mpesa_token():
     return resp.json()["access_token"], base_url
 
 
+@api.post("/upload/image")
+@jwt_required()
+def upload_image():
+    if (guard := owner_only()): return guard
+    if "file" not in request.files:
+        return err("No file provided")
+    file = request.files["file"]
+    if not file.filename:
+        return err("No file selected")
+    if not allowed_file(file.filename):
+        return err("Only jpg, jpeg, png, webp files are allowed")
+
+    upload_dir = os.path.join(current_app.root_path, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    ext = file.filename.rsplit(".", 1)[1].lower()
+    filename = f"{secrets.token_hex(12)}.{ext}"
+    file.save(os.path.join(upload_dir, filename))
+
+    return jsonify({"image_url": f"/uploads/{filename}"}), 201
+
+
+@api.get("/uploads/<filename>")
+def serve_upload(filename):
+    upload_dir = os.path.join(current_app.root_path, "uploads")
+    return send_from_directory(upload_dir, filename)
+
+
 # ─── Products ────────────────────────────────────────────────────────────────
 
 @api.get("/products")
 @jwt_required()
 def list_products():
     query = Product.query
+
+    # By default only show active products; pass ?include_inactive=true to see all
+    if request.args.get("include_inactive") not in ("1", "true"):
+        query = query.filter(Product.is_active == True)
 
     search = (request.args.get("search") or "").strip()
     if search:
@@ -117,7 +157,7 @@ def create_product():
     if Product.query.filter_by(name=data["name"]).first():
         return err("Product with this name already exists", 409)
 
-    product = Product(name=data["name"], price=data["price"], stock_quantity=data["stock_quantity"])
+    product = Product(name=data["name"], price=data["price"], stock_quantity=data["stock_quantity"], image_url=data.get("image_url"))
     db.session.add(product)
     db.session.commit()
     return jsonify(product.to_dict()), 201
@@ -136,6 +176,10 @@ def update_product(product_id):
         if data["stock_quantity"] < 0:
             return err("stock_quantity cannot be negative")
         product.stock_quantity = data["stock_quantity"]
+    if "image_url" in data:
+        product.image_url = data["image_url"]
+    if "is_active" in data:
+        product.is_active = bool(data["is_active"])
 
     db.session.commit()
     return jsonify(product.to_dict())
@@ -146,6 +190,12 @@ def update_product(product_id):
 def delete_product(product_id):
     if (guard := owner_only()): return guard
     product = db.get_or_404(Product, product_id)
+    has_sales = db.session.query(SaleItem).filter_by(product_id=product_id).first()
+    if has_sales:
+        product.is_active = False
+        product.stock_quantity = 0
+        db.session.commit()
+        return jsonify({"message": f"'{product.name}' has been deactivated and hidden from sales."})
     db.session.delete(product)
     db.session.commit()
     return jsonify({"message": f"Product '{product.name}' deleted"})

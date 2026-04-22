@@ -126,8 +126,10 @@ class Product(db.Model):
     name = db.Column(db.String(120), nullable=False, unique=True)
     price = db.Column(db.Numeric(10, 2), nullable=False)
     stock_quantity = db.Column(db.Integer, nullable=False, default=0)
+    image_url = db.Column(db.String(300), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
 
-    sale_items = db.relationship("SaleItem", back_populates="product")
+    sale_items = db.relationship("SaleItem", back_populates="product", passive_deletes=True)
 
     def to_dict(self):
         return {
@@ -135,6 +137,8 @@ class Product(db.Model):
             "name": self.name,
             "price": float(self.price),
             "stock_quantity": self.stock_quantity,
+            "image_url": self.image_url,
+            "is_active": self.is_active,
         }
 
 

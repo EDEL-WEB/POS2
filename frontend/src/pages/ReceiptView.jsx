@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { get_ } from "../api";
+import { productImageUrl } from "../imageUtils";
 
 export default function ReceiptView() {
   const { saleId } = useParams();
@@ -57,7 +58,7 @@ export default function ReceiptView() {
 
       <div className="receipt-wrapper">
         <div className="receipt" ref={printRef}>
-          <h2>🌸 SPARK PERFUMES</h2>
+          <h2>SPARK PERFUMES</h2>
           <p>Official Receipt</p>
           <div className="divider" />
 
@@ -83,7 +84,12 @@ export default function ReceiptView() {
             <tbody>
               {receipt.items?.map(item => (
                 <tr key={item.id}>
-                  <td>{item.product_name}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <img src={productImageUrl(item.product_name)} alt={item.product_name} style={{ width: 32, height: 32, borderRadius: 4, objectFit: "cover" }} />
+                      {item.product_name}
+                    </div>
+                  </td>
                   <td style={{ textAlign: "center" }}>{item.quantity}</td>
                   <td style={{ textAlign: "right" }}>{parseFloat(item.price).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</td>
                   <td style={{ textAlign: "right" }}>{parseFloat(item.subtotal).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</td>

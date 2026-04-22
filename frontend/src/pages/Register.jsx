@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Register() {
   const { register, loading } = useAuth();
@@ -34,7 +35,7 @@ export default function Register() {
           <label>Email</label>
           <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
           <label>Password</label>
-          <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+          <PasswordInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 chars, upper, lower, number, special" required />
           <button className="btn btn-primary" disabled={loading}>{loading ? "Registering…" : "Register"}</button>
         </form>
         <p className="auth-footer"><Link to="/login">Back to login</Link></p>
