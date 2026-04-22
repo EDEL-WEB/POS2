@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -15,10 +16,13 @@ def create_app(config=Config):
     # ✅ FIXED CORS (correct place)
     CORS(
         app,
-        origins=["http://localhost:3000", "http://127.0.0.1:3000",
-                 "http://localhost:3001", "http://127.0.0.1:3001",
-                 "http://localhost:3002", "http://127.0.0.1:3002",
-                 "http://localhost:3003", "http://127.0.0.1:3003"],
+        origins=[
+            "http://localhost:3000", "http://127.0.0.1:3000",
+            "http://localhost:3001", "http://127.0.0.1:3001",
+            "http://localhost:3002", "http://127.0.0.1:3002",
+            "http://localhost:3003", "http://127.0.0.1:3003",
+            os.environ.get("FRONTEND_URL", ""),
+        ],
         supports_credentials=True,
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
