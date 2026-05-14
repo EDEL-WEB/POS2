@@ -7,6 +7,14 @@ from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from werkzeug.utils import secure_filename
 from models import db, Product, Sale, SaleItem, Payment, Settings, User
+from datetime import timezone, timedelta
+
+EAT = timezone(timedelta(hours=3))
+
+def to_eat(dt):
+    if dt is None: return None
+    if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(EAT).isoformat()
 
 api = Blueprint("api", __name__)
 
@@ -574,7 +582,7 @@ def mpesa_payment_status(sale_id):
         "mpesa_receipt_number": payment.mpesa_receipt_number,
         "phone_number": payment.phone_number,
         "amount": float(sale.total_amount),
-        "timestamp": payment.timestamp.isoformat(),
+        "timestamp": to_eat(payment.timestamp),
     })
 
 
@@ -767,7 +775,7 @@ def cashflow_report():
 
     daily_totals = {}
     for sale in sales:
-        date_key = sale.timestamp.date().isoformat()
+        date_key = sale.timestamp.astimezone(EAT).date().isoformat()
         if date_key not in daily_totals:
             daily_totals[date_key] = {"cash": 0, "mpesa": 0}
         daily_totals[date_key][sale.payment_method] += float(sale.total_amount)
@@ -919,7 +927,7 @@ def get_sale_receipt(sale_id):
 
     receipt = {
         "sale_id": sale.id,
-        "timestamp": sale.timestamp.isoformat(),
+        "timestamp": to_eat(sale.timestamp),
         "customer_ref": sale.customer_ref,
         "cashier_name": sale.user.name if sale.user else "Unknown",
         "payment_method": sale.payment_method,
