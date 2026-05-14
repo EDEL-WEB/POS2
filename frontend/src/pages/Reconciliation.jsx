@@ -3,6 +3,9 @@ import { get_ } from "../api";
 
 const fmt = (n) => (n ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
+// Read time directly from EAT ISO string — avoids browser timezone re-conversion
+const eatTime = (ts) => ts ? ts.split("T")[1].slice(0, 8) : "";
+
 export default function Reconciliation() {
   const [date, setDate]         = useState(new Date().toISOString().slice(0, 10));
   const [allSales, setAllSales] = useState([]);
@@ -184,7 +187,7 @@ export default function Reconciliation() {
                   <td>{s.items?.length ?? 0}</td>
                   <td><strong style={{ color: "#f57f17" }}>KES {fmt(parseFloat(s.total_amount))}</strong></td>
                   <td><span className={`badge badge-${s.payment_method}`}>{s.payment_method}</span></td>
-                  <td>{new Date(s.timestamp).toLocaleTimeString("en-KE")}</td>
+                  <td>{eatTime(s.timestamp)}</td>
                 </tr>
               ))}
             </tbody>

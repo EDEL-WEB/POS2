@@ -11,6 +11,16 @@ import {
 const fmt = (n) => (n ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 const COLORS = ["#C8A45C", "#1565c0", "#2e7d32", "#c62828", "#7b1fa2"];
 
+// Read time directly from EAT ISO string — avoids browser timezone re-conversion
+const eatTime = (ts) => ts ? ts.split("T")[1].slice(0, 8) : "";
+const eatDateTime = (ts) => {
+  if (!ts) return "";
+  const [d, t] = ts.split("T");
+  const [y, m, day] = d.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}, ${t.slice(0,8)}`;
+};
+
 function SkeletonCard() {
   return <div className="stat-card skeleton" />;
 }
@@ -73,7 +83,7 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Payment breakdown for pie chart
   const pieData = daily ? [
@@ -235,7 +245,7 @@ export default function Dashboard() {
                     <td>{s.cashier_name}</td>
                     <td>KES {fmt(parseFloat(s.total_amount))}</td>
                     <td><span className={`badge badge-${s.payment_method}`}>{s.payment_method}</span></td>
-                    <td>{new Date(s.timestamp).toLocaleTimeString("en-KE")}</td>
+                    <td>{eatTime(s.timestamp)}</td>
                     <td><Link to={`/receipts/${s.id}`} className="btn btn-outline btn-sm">Receipt</Link></td>
                   </tr>
                 ))}

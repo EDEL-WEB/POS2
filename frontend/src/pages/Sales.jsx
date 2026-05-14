@@ -6,6 +6,15 @@ import { productImageUrl } from "../imageUtils";
 
 const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
+// Read time directly from EAT ISO string — avoids browser timezone re-conversion
+const eatDateTime = (ts) => {
+  if (!ts) return "";
+  const [d, t] = ts.split("T");
+  const [y, m, day] = d.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}, ${t.slice(0,8)}`;
+};
+
 export default function Sales() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -211,7 +220,7 @@ export default function Sales() {
                     <td>KES {fmt(parseFloat(s.total_amount))}</td>
                     <td><span className={`badge badge-${s.payment_method}`}>{s.payment_method}</span></td>
                     <td><span className={`badge badge-${s.status}`}>{s.status}</span></td>
-                    <td>{new Date(s.timestamp).toLocaleString("en-KE")}</td>
+                    <td>{eatDateTime(s.timestamp)}</td>
                     <td className="actions">
                       <button className="btn btn-outline btn-sm" onClick={() => setDetailSale(s)}>Details</button>
                       {s.status === "completed" && <Link to={`/receipts/${s.id}`} className="btn btn-outline btn-sm">🧾</Link>}
@@ -237,7 +246,7 @@ export default function Sales() {
               <div className="detail-row"><span>Customer</span><strong>{detailSale.customer_ref || "—"}</strong></div>
               <div className="detail-row"><span>Method</span><span className={`badge badge-${detailSale.payment_method}`}>{detailSale.payment_method}</span></div>
               <div className="detail-row"><span>Status</span><span className={`badge badge-${detailSale.status}`}>{detailSale.status}</span></div>
-              <div className="detail-row"><span>Time</span><strong>{new Date(detailSale.timestamp).toLocaleString("en-KE")}</strong></div>
+              <div className="detail-row"><span>Time</span><strong>{eatDateTime(detailSale.timestamp)}</strong></div>
             </div>
             <table className="table">
               <thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr></thead>

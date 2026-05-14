@@ -5,6 +5,14 @@ import PasswordInput from "../components/PasswordInput";
 
 const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
+// Read date directly from EAT ISO string — avoids browser timezone re-conversion
+const eatDate = (ts) => {
+  if (!ts) return "";
+  const [y, m, d] = ts.split("T")[0].split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
+};
+
 export default function Users() {
   const toast = useToast();
   const [users, setUsers]     = useState([]);
@@ -154,7 +162,7 @@ export default function Users() {
                   <td><strong>{u.name}</strong></td>
                   <td>{u.email}</td>
                   <td><span className={`badge badge-${u.status}`}>{u.status}</span></td>
-                  <td>{new Date(u.created_at).toLocaleDateString("en-KE")}</td>
+                  <td>{eatDate(u.created_at)}</td>
                   <td>{perf ? `${perf.sales} sales · KES ${fmt(perf.revenue)}` : <span className="muted">No sales yet</span>}</td>
                   <td className="actions">
                     {u.status !== "active"   && <button className="btn btn-primary btn-sm" onClick={() => setStatus(u.id, "active", u.name)}>Approve</button>}

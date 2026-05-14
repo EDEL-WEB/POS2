@@ -3,6 +3,20 @@ import { useParams, Link } from "react-router-dom";
 import { get_ } from "../api";
 import { productImageUrl } from "../imageUtils";
 
+// Parse the EAT timestamp from the API without browser timezone conversion
+function parseEAT(ts) {
+  if (!ts) return { dateStr: "", timeStr: "" };
+  // ts is like "2026-05-14T21:09:58+03:00" — split on T and drop offset from time
+  const [datePart, timePart] = ts.split("T");
+  const [y, m, d] = datePart.split("-");
+  const timeOnly = timePart.slice(0, 8); // "21:09:58"
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return {
+    dateStr: `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}`,
+    timeStr: timeOnly,
+  };
+}
+
 export default function ReceiptView() {
   const { saleId } = useParams();
   const [receipt, setReceipt] = useState(null);
@@ -47,7 +61,7 @@ export default function ReceiptView() {
 
   if (!receipt) return <div className="loading">Loading receipt…</div>;
 
-  const date = new Date(receipt.timestamp);
+  const { dateStr, timeStr } = parseEAT(receipt.timestamp);
 
   return (
     <div>
@@ -64,8 +78,8 @@ export default function ReceiptView() {
 
           <p><strong>Receipt #:</strong> {receipt.sale_id}</p>
           {receipt.receipt_number && <p><strong>M-Pesa Ref:</strong> {receipt.receipt_number}</p>}
-          <p><strong>Date:</strong> {date.toLocaleDateString("en-KE", { day: "2-digit", month: "short", year: "numeric" })}</p>
-          <p><strong>Time:</strong> {date.toLocaleTimeString("en-KE")}</p>
+          <p><strong>Date:</strong> {dateStr}</p>
+          <p><strong>Time:</strong> {timeStr}</p>
           <p><strong>Cashier:</strong> {receipt.cashier_name}</p>
           {receipt.customer_ref && <p><strong>Customer:</strong> {receipt.customer_ref}</p>}
           <p><strong>Payment:</strong> {receipt.payment_method?.toUpperCase()}</p>

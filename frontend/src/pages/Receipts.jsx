@@ -5,6 +5,16 @@ import { useToast } from "../ToastProvider";
 
 const fmt = (n) => parseFloat(n).toLocaleString("en-KE", { minimumFractionDigits: 2 });
 
+// Read EAT time directly from the ISO string — no browser timezone conversion
+function fmtEAT(ts) {
+  if (!ts) return "";
+  const [datePart, timePart] = ts.split("T");
+  const [y, m, d] = datePart.split("-");
+  const timeOnly = timePart.slice(0, 8);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}, ${timeOnly}`;
+}
+
 export default function Receipts() {
   const toast = useToast();
   const [sales, setSales]     = useState([]);
@@ -109,7 +119,7 @@ export default function Receipts() {
                 <td>{s.items?.length ?? 0}</td>
                 <td><strong>KES {fmt(parseFloat(s.total_amount))}</strong></td>
                 <td><span className={`badge badge-${s.payment_method}`}>{s.payment_method}</span></td>
-                <td>{new Date(s.timestamp).toLocaleString("en-KE")}</td>
+                <td>{fmtEAT(s.timestamp)}</td>
                 <td className="actions">
                   <Link to={`/receipts/${s.id}`} className="btn btn-outline btn-sm">🧾 View</Link>
                   <button className="btn btn-danger btn-sm" onClick={() => { setRefunding(s); setRefundReason(""); }}>↩ Refund</button>
