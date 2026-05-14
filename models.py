@@ -6,6 +6,17 @@ from bcrypt import hashpw, checkpw, gensalt
 
 db = SQLAlchemy()
 
+EAT = timezone(timedelta(hours=3))  # East Africa Time (UTC+3)
+
+
+def to_eat(dt: datetime) -> str:
+    """Convert a UTC datetime to EAT and return as ISO 8601 string."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)  # treat naive datetimes as UTC
+    return dt.astimezone(EAT).isoformat()
+
 
 class TokenBlocklist(db.Model):
     """Stores revoked JWT JTIs for logout and refresh token rotation."""
@@ -115,7 +126,7 @@ class User(db.Model):
             "email": self.email,
             "role": self.role,
             "status": self.status,
-            "created_at": self.created_at.isoformat(),
+            "created_at": to_eat(self.created_at),
         }
 
 
@@ -171,7 +182,7 @@ class Sale(db.Model):
             "total_amount": float(self.total_amount),
             "payment_method": self.payment_method,
             "status": self.status,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": to_eat(self.timestamp),
             "notes": self.notes,
             "customer_ref": self.customer_ref,
             "items": [item.to_dict() for item in self.items],
@@ -224,7 +235,7 @@ class Payment(db.Model):
             "mpesa_checkout_id": self.mpesa_checkout_id,
             "mpesa_receipt_number": self.mpesa_receipt_number,
             "status": self.status,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": to_eat(self.timestamp),
         }
 
 
@@ -253,5 +264,5 @@ class Settings(db.Model):
             "low_stock_threshold": self.low_stock_threshold,
             "enable_mpesa": self.enable_mpesa,
             "enable_cash": self.enable_cash,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "updated_at": to_eat(self.updated_at) if self.updated_at else None,
         }
